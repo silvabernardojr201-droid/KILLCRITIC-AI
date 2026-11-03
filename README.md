@@ -1,0 +1,2 @@
+# KILLCRITIC-AI
+KILLCRITIC AI - Forex Analysis Bot
