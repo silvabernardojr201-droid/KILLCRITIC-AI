@@ -6,7 +6,7 @@ app.use(express.json());
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
-const API_KEY = process.env.TWELVE_DATA_API_KEY;
+const API_KEY = process.env.TWELVE_DATA_API;
 
 const PAIRS = [
   "EUR/USD",
