@@ -2,9 +2,9 @@
   "name": "killcritic-ai",
   "version": "1.0.0",
   "description": "KILLCRITIC AI - Forex Analysis Bot",
-  "main": "server.js",
+  "main": "servidor.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node servidor.js"
   },
   "dependencies": {
     "express": "^4.21.2"
