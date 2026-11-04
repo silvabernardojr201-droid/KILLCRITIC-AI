@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>KILLCRITIC-AI</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #080e18;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+header {
+  background: #101a29;
+  padding: 20px;
+  border-bottom: 1px solid #26364b;
+}
+
+header h1 {
+  color: #00e5a0;
+  margin: 0;
+}
+
+header p {
+  color: #9eacc0;
+}
+
+.container {
+  padding: 20px;
+  max-width: 900px;
+  margin: auto;
+}
+
+.card {
+  background: #111d2d;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 18px;
+  border: 1px solid #26364b;
+}
+
+label {
+  display: block;
+  margin: 15px 0 8px;
+}
+
+select, button {
+  width: 100%;
+  padding: 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 16px;
+}
+
+select {
+  background: #202e42;
+  color: white;
+}
+
+button {
+  background: #00d69a;
+  color: #06140f;
+  font-weight: bold;
+  margin-top: 18px;
+}
+
+button:disabled {
+  opacity: .5;
+}
+
+.result {
+  text-align: center;
+}
+
+.signal {
+  font-size: 30px;
+  font-weight: bold;
+  margin: 15px;
+}
+
+.buy {
+  color: #00e5a0;
+}
+
+.sell {
+  color: #ff5268;
+}
+
+.neutral {
+  color: #ffc857;
+}
+
+.data {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.data div {
+  background: #202e42;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.data span {
+  display: block;
+  color: #9eacc0;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.data strong {
+  font-size: 17px;
+}
+
+#status {
+  color: #ffc857;
+  margin-top: 15px;
+}
+
+footer {
+  text-align: center;
+  padding: 25px;
+  color: #8392a8;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>KILLCRITIC-AI</h1>
+  <p>Intelligent Forex Market Analysis</p>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>Configuração da análise</h2>
+
+    <label>Selecionar mercado</label>
+
+    <select id="symbol">
+      <option>EUR/USD</option>
+      <option>GBP/USD</option>
+      <option>USD/JPY</option>
+      <option>USD/CHF</option>
+      <option>USD/CAD</option>
+      <option>AUD/USD</option>
+      <option>NZD/USD</option>
+      <option>EUR/GBP</option>
+      <option>EUR/JPY</option>
+      <option>GBP/JPY</option>
+      <option>EUR/CHF</option>
+      <option>EUR/CAD</option>
+      <option>AUD/JPY</option>
+      <option>GBP/CHF</option>
+      <option>XAU/USD</option>
+    </select>
+
+    <label>Timeframe</label>
+
+    <select id="interval">
+      <option value="1min">M1</option>
+      <option value="5min">M5</option>
+      <option value="15min" selected>M15</option>
+      <option value="30min">M30</option>
+      <option value="1h">H1</option>
+      <option value="4h">H4</option>
+      <option value="1day">D1</option>
+    </select>
+
+    <button id="analyze" onclick="analyze()">
+      ANALISAR MERCADO
+    </button>
+
+    <p id="status">Aguardando análise...</p>
+  </div>
+
+  <div class="card result">
+    <h2>SINAL DO KILLCRITIC</h2>
+
+    <div id="signal" class="signal neutral">
+      AGUARDAR
+    </div>
+
+    <p id="pair">EUR/USD | M15</p>
+  </div>
+
+  <div class="card">
+    <h2>Informações da operação</h2>
+
+    <div class="data">
+
+      <div>
+        <span>ENTRADA</span>
+        <strong id="entry">--</strong>
+      </div>
+
+      <div>
+        <span>STOP LOSS</span>
+        <strong id="sl">--</strong>
+      </div>
+
+      <div>
+        <span>TAKE PROFIT</span>
+        <strong id="tp">--</strong>
+      </div>
+
+      <div>
+        <span>RSI 14</span>
+        <strong id="rsi">--</strong>
+      </div>
+
+      <div>
+        <span>EMA 9</span>
+        <strong id="ema9">--</strong>
+      </div>
+
+      <div>
+        <span>EMA 21</span>
+        <strong id="ema21">--</strong>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Mercado</h2>
+    <p>Preço atual: <strong id="price">--</strong></p>
+    <p>Última vela: <strong id="candle">--</strong></p>
+  </div>
+
+</div>
+
+<footer>
+  KILLCRITIC-AI © 2026
+  <br>
+  Análise técnica não garante resultados financeiros.
+</footer>
+
+<script>
+
+async function analyze() {
+
+  const button = document.getElementById("analyze");
+
+  const symbol = document.getElementById("symbol").value;
+  const interval = document.getElementById("interval").value;
+
+  button.disabled = true;
+
+  document.getElementById("status").textContent =
+    "A analisar mercado...";
+
+  try {
+
+    const response = await fetch(
+      `/api/analyze?symbol=${encodeURIComponent(symbol)}&interval=${interval}`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Erro na análise");
+    }
+
+    const a = data.analysis;
+    const i = data.indicators;
+    const m = data.market;
+
+    const signal = document.getElementById("signal");
+
+    signal.textContent = a.direction;
+
+    signal.className = "signal " +
+      (a.signal === "BUY" ? "buy" :
+       a.signal === "SELL" ? "sell" : "neutral");
+
+    document.getElementById("pair").textContent =
+      `${symbol} | ${interval}`;
+
+    document.getElementById("entry").textContent = a.entry;
+
+    document.getElementById("sl").textContent =
+      a.stopLoss ?? "--";
+
+    document.getElementById("tp").textContent =
+      a.takeProfit ?? "--";
+
+    document.getElementById("rsi").textContent = i.RSI14;
+
+    document.getElementById("ema9").textContent = i.EMA9;
+
+    document.getElementById("ema21").textContent = i.EMA21;
+
+    document.getElementById("price").textContent =
+      m.currentPrice;
+
+    document.getElementById("candle").textContent =
+      m.lastCandle;
+
+    document.getElementById("status").textContent =
+      "Análise concluída com sucesso.";
+
+  } catch(error) {
+
+    document.getElementById("status").textContent =
+      "Erro: " + error.message;
+
+  } finally {
+
+    button.disabled = false;
+
+  }
+
+}
+
+</script>
+
+</body>
+  </html>
