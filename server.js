@@ -27,11 +27,7 @@ const PAIRS = [
 ];
 
 app.get("/", (req, res) => {
-  res.send(`
-    <h1>KILLCRITIC-AI</h1>
-    <p>Forex Analysis API is running.</p>
-    <p>Versão 1.0</p>
-  `);
+  res.sendFile(__dirname + "/public/index.html");
 });
 
 app.get("/api/status", (req, res) => {
