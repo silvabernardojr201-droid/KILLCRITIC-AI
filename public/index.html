@@ -191,7 +191,62 @@ document.getElementById("chart").innerHTML=
 }
 
 loadAssets();
-</script>
+async function updateSignal() {
+    const symbol = document.getElementById("asset").value;
+    const interval = document.getElementById("timeframe").value;
+
+    const signalBox = document.getElementById("signal");
+
+    signalBox.innerHTML = "<h3>A analisar mercado...</h3>";
+
+    try {
+        const response = await fetch(
+            `/api/analyze?symbol=${encodeURIComponent(symbol)}&interval=${interval}min`
+        );
+
+        if (!response.ok) throw new Error("Dados indisponíveis");
+
+        const data = await response.json();
+
+        const signal = data.signal || data.analysis?.signal || "AGUARDAR";
+        const entry = data.entry ?? data.analysis?.entry ?? "--";
+        const sl = data.stopLoss ?? data.sl ?? data.analysis?.stopLoss ?? "--";
+        const tp = data.takeProfit ?? data.tp ?? data.analysis?.takeProfit ?? "--";
+
+        signalBox.innerHTML = `
+            <h3>SINAL: ${signal}</h3>
+            <p>Entrada: ${entry}</p>
+            <p>Stop Loss: ${sl}</p>
+            <p>Take Profit: ${tp}</p>
+            <p>Atualizado: ${new Date().toLocaleTimeString()}</p>
+        `;
+    } catch (error) {
+        signalBox.innerHTML = "<h3>AGUARDAR</h3><p>Não foi possível obter dados reais.</p>";
+    }
+}
+
+async function changeChart() {
+    const symbol = document.getElementById("asset").value;
+    const timeframe = document.getElementById("timeframe").value;
+    const name = document.getElementById("asset").selectedOptions[0].text;
+
+    document.getElementById("selected").textContent = name;
+    document.getElementById("selectedTF").textContent =
+        timeframe === "D" ? "D1" : timeframe === "W" ? "W1" : "M" + timeframe;
+
+    const url = "https://s.tradingview.com/widgetembed/?symbol=" +
+        encodeURIComponent(symbol) +
+        "&interval=" + timeframe +
+        "&hidesidetoolbar=1&symboledit=1&theme=dark&style=1&timezone=Etc%2FUTC";
+
+    document.getElementById("chart").innerHTML =
+        '<iframe title="Gráfico" src="' + url +
+        '" style="width:100%;height:100%;border:0"></iframe>';
+
+    await updateSignal();
+}
+
+setInterval(updateSignal, 60000);</script>
 
 </body>
 </html>
