@@ -82,11 +82,17 @@ footer{text-align:center;color:#71849c;padding:20px;font-size:12px}
 </div>
 <p class="green">Gráfico conectado</p>
 <div class="stat" id="signal">
-  <h3>Aguardando análise...</h3>
-  <p>BUY / SELL</p>
-  <p>Entrada: --</p>
-  <p>Stop Loss: --</p>
-  <p>Take Profit: --</p>
+  <h3>SCANNER KILLCRITIC-SBC</h3>
+
+  <p id="signalType">Aguardando análise...</p>
+  <p id="entry">Entrada: --</p>
+  <p id="stopLoss">Stop Loss: --</p>
+  <p id="takeProfit">Take Profit: --</p>
+
+  <button onclick="updateSignal()"
+    style="padding:12px 20px;background:#14b878;color:white;border:0;border-radius:8px;font-weight:bold;">
+    ANALISAR
+  </button>
 </div>
 </div>
 
