@@ -82,16 +82,21 @@ footer{text-align:center;color:#71849c;padding:20px;font-size:12px}
 </div>
 <p class="green">Gráfico conectado</p>
 <div class="stat" id="signal">
-  <h3>SCANNER KILLCRITIC-SBC</h3>
+    <h3>SCANNER KILLCRITIC-SBC</h3>
 
-  <p id="signalType">Aguardando análise...</p>
-  <p id="entry">Entrada: --</p>
-  <p id="stopLoss">Stop Loss: --</p>
-  <p id="takeProfit">Take Profit: --</p>
+    <div id="signalResult">
+        <p id="signalType">Aguardando análise...</p>
+        <p id="entry">Entrada: --</p>
+        <p id="stopLoss">Stop Loss: --</p>
+        <p id="takeProfit">Take Profit: --</p>
+    </div>
 
-<button type="button" onclick="updateSignal()" style="display:block !important; padding:15px 25px; background:#14b878; color:white; border:2px solid white; border-radius:10px; font-size:18px; font-weight:bold;">ANALISAR</button>
-    ANALISAR
-  </button>
+    <button type="button" onclick="updateSignal()" style="display:block;width:100%;padding:15px;background:#14b878;color:white;border:2px solid white;border-radius:10px;font-size:18px;font-weight:bold;">
+        ANALISAR
+    </button>
+</div>
+</div>
+</div>
 </div>
 </div>
 
@@ -202,7 +207,7 @@ async function updateSignal() {
 
     const signalBox = document.getElementById("signal");
 
-    signalBox.innerHTML = "<h3>A analisar mercado...</h3>";
+document.getElementById("signalResult").innerHTML = "<h3>A analisar mercado...</h3>";
 
     try {
         const response = await fetch(
