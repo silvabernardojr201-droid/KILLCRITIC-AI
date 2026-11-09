@@ -202,7 +202,8 @@ document.getElementById("chart").innerHTML=
 
 loadAssets();
 async function updateSignal() {
-    const symbol = document.getElementById("asset").value;
+    const rawSymbol = document.getElementById("asset").value;
+const symbol = rawSymbol.replace(/^FX:/, "").replace(/^([A-Z]{3})([A-Z]{3})$/, "$1/$2");
     const interval = document.getElementById("timeframe").value;
 
     const signalBox = document.getElementById("signal");
