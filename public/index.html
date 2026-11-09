@@ -223,13 +223,13 @@ document.getElementById("signalResult").innerHTML = "<h3>A analisar mercado...</
         const sl = data.stopLoss ?? data.sl ?? data.analysis?.stopLoss ?? "--";
         const tp = data.takeProfit ?? data.tp ?? data.analysis?.takeProfit ?? "--";
 
-        document.getElementById("signalResult").innerHTML =
-            <h3>SINAL: ${signal}</h3>
-            <p>Entrada: ${entry}</p>
-            <p>Stop Loss: ${sl}</p>
-            <p>Take Profit: ${tp}</p>
-            <p>Atualizado: ${new Date().toLocaleTimeString()}</p>
-        `;
+        document.getElementById("signalResult").innerHTML = `
+    <h3>SINAL: ${signal}</h3>
+    <p>Entrada: ${entry}</p>
+    <p>Stop Loss: ${sl}</p>
+    <p>Take Profit: ${tp}</p>
+    <p>Atualizado: ${new Date().toLocaleTimeString()}</p>
+`;
     } catch (error) {
         document.getElementById("signalResult").innerHTML = "<h3>AGUARDAR</h3><p>Não foi possível obter dados reais.</p>";
     }
