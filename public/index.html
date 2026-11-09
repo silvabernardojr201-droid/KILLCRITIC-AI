@@ -219,11 +219,10 @@ document.getElementById("signalResult").innerHTML = "<h3>A analisar mercado...</
 
         const data = await response.json();
 
-        const signal = data.signal || data.analysis?.signal || "AGUARDAR";
-        const entry = data.entry ?? data.analysis?.entry ?? "--";
-        const sl = data.stopLoss ?? data.sl ?? data.analysis?.stopLoss ?? "--";
-        const tp = data.takeProfit ?? data.tp ?? data.analysis?.takeProfit ?? "--";
-
+        const signal = data.analysis?.signal || "AGUARDAR";
+const entry = data.analysis?.entry ?? "--";
+const sl = data.analysis?.stopLoss ?? "--";
+const tp = data.analysis?.takeProfit ?? "--";
         document.getElementById("signalResult").innerHTML = `
     <h3>SINAL: ${signal}</h3>
     <p>Entrada: ${entry}</p>
