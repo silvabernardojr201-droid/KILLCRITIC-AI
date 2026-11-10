@@ -9,21 +9,20 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.TWELVE_DATA_API;
 
 const PAIRS = [
-  "EUR/USD",
-  "GBP/USD",
-  "USD/JPY",
-  "USD/CHF",
-  "USD/CAD",
-  "AUD/USD",
-  "NZD/USD",
-  "EUR/GBP",
-  "EUR/JPY",
-  "GBP/JPY",
-  "EUR/CHF",
-  "EUR/CAD",
-  "AUD/JPY",
-  "GBP/CHF",
-  "XAU/USD"
+  // Forex
+  "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF",
+  "USD/CAD", "AUD/USD", "NZD/USD", "EUR/GBP",
+  "EUR/JPY", "GBP/JPY", "EUR/CHF", "EUR/CAD",
+  "AUD/JPY", "GBP/CHF", "AUD/CAD", "AUD/NZD",
+  "CAD/JPY", "CHF/JPY", "EUR/AUD", "EUR/NZD",
+  "GBP/AUD", "GBP/CAD", "NZD/JPY",
+
+  // Metais
+  "XAU/USD", "XAG/USD",
+
+  // Criptomoedas
+  "BTC/USD", "ETH/USD", "BNB/USD",
+  "SOL/USD", "XRP/USD"
 ];
 
 app.get("/", (req, res) => {
