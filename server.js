@@ -8,6 +8,7 @@ app.use(express.static("public"));
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.TWELVE_DATA_API;
 
+// Ativos configurados
 const PAIRS = [
   // Forex
   "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF",
@@ -25,27 +26,21 @@ const PAIRS = [
   "SOL/USD", "XRP/USD"
 ];
 
-app.get("/", (req, res) => {
-  res.sendFile(__dirname + "/public/index.html");
-});
+// Timeframes suportados pela API
+const ALLOWED_INTERVALS = [
+  "1min", "5min", "15min",
+  "30min", "1h", "4h", "1day"
+];
 
-app.get("/api/status", (req, res) => {
-  res.json({
-    bot: "KILLCRITIC-AI",
-    status: "ONLINE",
-    market: "Forex",
-    apiConfigured: !!API_KEY
-  });
-});
+// Precisão dos preços
+function getDecimals(symbol) {
+  if (symbol.includes("JPY")) return 3;
+  if (symbol.startsWith("XAU") || symbol.startsWith("XAG")) return 2;
+  if (symbol.includes("BTC") || symbol.includes("ETH")) return 2;
+  return 5;
+}
 
-app.get("/api/pairs", (req, res) => {
-  res.json({
-    total: PAIRS.length,
-    pairs: PAIRS
-  });
-});
-
-// Cálculo EMA
+// EMA
 function calculateEMA(data, period) {
   const multiplier = 2 / (period + 1);
   let ema = data[0];
@@ -57,7 +52,7 @@ function calculateEMA(data, period) {
   return ema;
 }
 
-// Cálculo RSI
+// RSI
 function calculateRSI(data, period = 14) {
   let gains = 0;
   let losses = 0;
@@ -65,8 +60,11 @@ function calculateRSI(data, period = 14) {
   for (let i = data.length - period; i < data.length; i++) {
     const change = data[i] - data[i - 1];
 
-    if (change > 0) gains += change;
-    else losses -= change;
+    if (change > 0) {
+      gains += change;
+    } else {
+      losses -= change;
+    }
   }
 
   const avgGain = gains / period;
@@ -79,7 +77,7 @@ function calculateRSI(data, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// Cálculo ATR
+// ATR
 function calculateATR(candles, period = 14) {
   const ranges = [];
 
@@ -87,10 +85,14 @@ function calculateATR(candles, period = 14) {
     const current = candles[i];
     const previous = candles[i - 1];
 
+    const high = Number(current.high);
+    const low = Number(current.low);
+    const previousClose = Number(previous.close);
+
     const tr = Math.max(
-      Number(current.high) - Number(current.low),
-      Math.abs(Number(current.high) - Number(previous.close)),
-      Math.abs(Number(current.low) - Number(previous.close))
+      high - low,
+      Math.abs(high - previousClose),
+      Math.abs(low - previousClose)
     );
 
     ranges.push(tr);
@@ -98,10 +100,41 @@ function calculateATR(candles, period = 14) {
 
   const recent = ranges.slice(-period);
 
+  if (!recent.length) return 0;
+
   return recent.reduce((a, b) => a + b, 0) / recent.length;
 }
 
-// Análise de mercado
+// Formatação numérica
+function formatPrice(value, decimals) {
+  if (value === null || !Number.isFinite(value)) return null;
+  return Number(value.toFixed(decimals));
+}
+
+// Página inicial
+app.get("/", (req, res) => {
+  res.sendFile(__dirname + "/public/index.html");
+});
+
+// Estado do bot
+app.get("/api/status", (req, res) => {
+  res.json({
+    bot: "KILLCRITIC-AI",
+    status: "ONLINE",
+    market: "Forex, Metais e Criptomoedas",
+    apiConfigured: Boolean(API_KEY)
+  });
+});
+
+// Lista de ativos
+app.get("/api/pairs", (req, res) => {
+  res.json({
+    total: PAIRS.length,
+    pairs: PAIRS
+  });
+});
+
+// Análise do mercado
 app.get("/api/analyze", async (req, res) => {
   try {
     const symbol = (req.query.symbol || "EUR/USD").toUpperCase();
@@ -110,25 +143,21 @@ app.get("/api/analyze", async (req, res) => {
     if (!API_KEY) {
       return res.status(503).json({
         error: "API KEY não configurada.",
-        instruction: "Configure TWELVE_DATA_API_KEY no Render."
+        instruction: "Configure TWELVE_DATA_API no Render."
       });
     }
 
     if (!PAIRS.includes(symbol)) {
       return res.status(400).json({
-        error: "Par não suportado.",
+        error: "Ativo não suportado.",
         availablePairs: PAIRS
       });
     }
 
-    const allowedIntervals = [
-      "1min", "5min", "15min",
-      "30min", "1h", "4h", "1day"
-    ];
-
-    if (!allowedIntervals.includes(interval)) {
+    if (!ALLOWED_INTERVALS.includes(interval)) {
       return res.status(400).json({
-        error: "Timeframe inválido."
+        error: "Timeframe inválido.",
+        allowedIntervals: ALLOWED_INTERVALS
       });
     }
 
@@ -146,8 +175,8 @@ app.get("/api/analyze", async (req, res) => {
 
     if (!response.ok || result.status === "error") {
       return res.status(502).json({
-        error: "Erro ao obter dados do mercado.",
-        details: result.message || "Verifique a API."
+        error: "Não foi possível obter dados do mercado.",
+        details: result.message || "Erro na Twelve Data."
       });
     }
 
@@ -157,74 +186,87 @@ app.get("/api/analyze", async (req, res) => {
       });
     }
 
-    const candles = result.values.reverse();
+    const candles = result.values.slice().reverse();
 
     const closes = candles.map(c => Number(c.close));
+
+    if (closes.some(value => !Number.isFinite(value))) {
+      return res.status(502).json({
+        error: "Dados de preços inválidos."
+      });
+    }
 
     const price = closes[closes.length - 1];
 
     const ema9 = calculateEMA(closes.slice(-30), 9);
     const ema21 = calculateEMA(closes.slice(-50), 21);
-
     const rsi = calculateRSI(closes);
     const atr = calculateATR(candles);
 
-    let signal = "NEUTRAL";
+    // Sinal e níveis de operação
+    let signal = "AGUARDAR";
     let entry = price;
     let stopLoss = null;
-    let takeProfit = null;
+    let tp1 = null;
+    let tp2 = null;
+    let tp3 = null;
 
     if (ema9 > ema21 && rsi > 50 && rsi < 70) {
       signal = "BUY";
 
       stopLoss = price - (atr * 1.5);
-      takeProfit = price + (atr * 3);
-    }
+      tp1 = price + (atr * 1.5);
+      tp2 = price + (atr * 2);
+      tp3 = price + (atr * 3);
 
-    if (ema9 < ema21 && rsi < 50 && rsi > 30) {
+    } else if (ema9 < ema21 && rsi < 50 && rsi > 30) {
       signal = "SELL";
 
       stopLoss = price + (atr * 1.5);
-      takeProfit = price - (atr * 3);
+      tp1 = price - (atr * 1.5);
+      tp2 = price - (atr * 2);
+      tp3 = price - (atr * 3);
     }
 
-    const decimals = symbol.includes("JPY") ? 3 : 5;
+    const decimals = getDecimals(symbol);
 
-    res.json({
+    // Resultado da análise
+    return res.json({
       bot: "KILLCRITIC-AI",
       pair: symbol,
       timeframe: interval,
 
       analysis: {
         signal,
+
         direction: signal === "BUY"
           ? "COMPRA"
           : signal === "SELL"
           ? "VENDA"
           : "AGUARDAR",
 
-        entry: Number(entry.toFixed(decimals)),
+        entry: formatPrice(entry, decimals),
+        stopLoss: formatPrice(stopLoss, decimals),
 
-        stopLoss: stopLoss === null
-          ? null
-          : Number(stopLoss.toFixed(decimals)),
+        tp1: formatPrice(tp1, decimals),
+        tp2: formatPrice(tp2, decimals),
+        tp3: formatPrice(tp3, decimals),
 
-        takeProfit: takeProfit === null
-          ? null
-          : Number(takeProfit.toFixed(decimals)),
+        // Compatibilidade com versões antigas do painel
+        takeProfit: formatPrice(tp3, decimals),
 
         riskReward: "1:2"
       },
 
       indicators: {
-        EMA9: Number(ema9.toFixed(decimals)),
-        EMA21: Number(ema21.toFixed(decimals)),
+        EMA9: formatPrice(ema9, decimals),
+        EMA21: formatPrice(ema21, decimals),
         RSI14: Number(rsi.toFixed(2)),
-        ATR14: Number(atr.toFixed(decimals))
+        ATR14: formatPrice(atr, decimals)
       },
 
       market: {
-        currentPrice: price,
+        currentPrice: formatPrice(price, decimals),
         lastCandle: candles[candles.length - 1].datetime
       },
 
@@ -232,13 +274,16 @@ app.get("/api/analyze", async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({
+    console.error("Erro na análise:", error);
+
+    return res.status(500).json({
       error: "Erro interno na análise.",
       details: error.message
     });
   }
 });
 
+// Inicialização
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`KILLCRITIC-AI ONLINE na porta ${PORT}`);
 });
