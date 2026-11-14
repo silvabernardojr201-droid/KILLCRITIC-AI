@@ -1,8 +1,11 @@
-<!DOCTYPE html><html lang="pt">
+<!DOCTYPE html>
+<html lang="pt">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KILLCRITIC-SBC</title><style>
+<title>KILLCRITIC-SBC</title>
+
+<style>
 *{box-sizing:border-box}
 body{margin:0;background:#080e18;color:#fff;font-family:Arial,sans-serif}
 header{padding:18px;background:#101a29;border-bottom:1px solid #26364b}
@@ -11,9 +14,11 @@ header small{color:#8fa4bd}
 .container{padding:14px;max-width:1100px;margin:auto}
 .card{background:#101a29;border:1px solid #26364b;border-radius:12px;padding:15px;margin-bottom:14px}
 h3{margin-top:0;color:#27d9a0}
-select,button{background:#18283c;color:white;border:1px solid #354b65;padding:12px;border-radius:8px;font-size:14px}
+select,input,button{background:#18283c;color:white;border:1px solid #354b65;padding:12px;border-radius:8px;font-size:14px}
+input{width:100%;margin:7px 0}
 select{width:100%;margin:6px 0}
 button{cursor:pointer}
+button:disabled{opacity:.5}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .stat{background:#18283c;padding:12px;border-radius:8px}
 .stat small{color:#9aacc0}
@@ -22,16 +27,70 @@ button{cursor:pointer}
 .green{color:#27d9a0}
 .red{color:#ff6475}
 footer{text-align:center;color:#71849c;padding:20px;font-size:12px}
-</style></head><body><header>
+.auth-card{max-width:440px;margin:35px auto}
+.auth-card button{width:100%;margin-top:9px}
+.secondary{background:transparent;border-color:#27d9a0}
+#authMessage{font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+#appPanel{display:none}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.topbar button{padding:8px 12px}
+</style>
+</head>
+
+<body>
+
+<header>
 <h2>◆ KILLCRITIC-SBC</h2>
 <small>UNIVERSAL MARKET ANALYSIS</small>
-</header><div class="container"><div class="card">
-<h3>Mercado</h3><select id="category" onchange="loadAssets()">
+</header>
+
+<!-- AUTENTICAÇÃO -->
+<div class="container" id="authPanel">
+<div class="card auth-card">
+
+<h3 id="authTitle">Iniciar sessão</h3>
+
+<form id="loginForm">
+<input id="email" type="email" placeholder="O teu e-mail" autocomplete="email" required>
+
+<input id="password" type="password" placeholder="Palavra-passe" autocomplete="current-password" required minlength="6">
+
+<button type="submit" id="loginButton">ENTRAR</button>
+</form>
+
+<button class="secondary" id="showRegister">CRIAR CONTA</button>
+
+<button class="secondary" id="resetButton">RECUPERAR PALAVRA-PASSE</button>
+
+<p id="authMessage" aria-live="polite"></p>
+
+</div>
+</div>
+
+<!-- PAINEL PRINCIPAL -->
+<div id="appPanel">
+
+<div class="container">
+
+<div class="card topbar">
+<div>
+<strong class="green">Sessão iniciada</strong>
+<p id="userEmail" style="margin:5px 0 0"></p>
+</div>
+<button id="logoutButton">SAIR</button>
+</div>
+
+<div class="card">
+<h3>Mercado</h3>
+
+<select id="category" onchange="loadAssets()">
 <option value="forex">Forex</option>
 <option value="metals">Metais</option>
 <option value="indices">Índices</option>
 <option value="crypto">Criptomoedas</option>
-</select><select id="asset" onchange="changeChart()"></select>
+</select>
+
+<select id="asset" onchange="changeChart()"></select>
 
 <select id="timeframe" onchange="changeChart()">
 <option value="1">M1</option>
@@ -42,43 +101,197 @@ footer{text-align:center;color:#71849c;padding:20px;font-size:12px}
 <option value="240">H4</option>
 <option value="D">D1</option>
 </select>
-</div><div class="card">
+</div>
+
+<div class="card">
 <h3>Gráfico de mercado</h3>
 <div id="chart"></div>
 <small>Gráfico fornecido pelo TradingView. A disponibilidade e o atraso dos preços dependem da fonte de dados.</small>
-</div><div class="card">
-<h3>Scanner de mercados</h3><div class="grid">
+</div>
+
+<div class="card">
+<h3>Scanner de mercados</h3>
+
+<div class="grid">
 <div class="stat">
 <small>Mercado selecionado</small>
 <strong id="selected">EUR/USD</strong>
-</div><div class="stat">
+</div>
+
+<div class="stat">
 <small>Timeframe</small>
 <strong id="selectedTF">M15</strong>
 </div>
-</div><p class="green">Gráfico conectado</p><div class="stat" id="signal">
-<h3>SCANNER KILLCRITIC-SBC</h3><div id="signalResult">
+</div>
+
+<p class="green">Gráfico conectado</p>
+
+<div class="stat" id="signal">
+<h3>SCANNER KILLCRITIC-SBC</h3>
+
+<div id="signalResult">
 <p id="signalType">Aguardando análise...</p>
 <p>Entrada: --</p>
 <p>Stop Loss: --</p>
 <p>TP1: --</p>
 <p>TP2: --</p>
 <p>TP3: --</p>
-</div><button type="button" onclick="updateSignal()" style="display:block;width:100%;padding:15px;background:#14b878;color:white;border:2px solid white;border-radius:10px;font-size:18px;font-weight:bold;">
+</div>
+
+<button type="button" onclick="updateSignal()" style="display:block;width:100%;padding:15px;background:#14b878;color:white;border:2px solid white;border-radius:10px;font-size:18px;font-weight:bold;">
 ANALISAR
 </button>
 </div>
-</div><div class="card">
+</div>
+
+<div class="card">
 <h3>Ferramentas de análise</h3>
+
 <div class="grid">
 <div class="stat">EMA<br><strong>EMA 9 / EMA 21</strong></div>
 <div class="stat">RSI<br><strong>RSI 14</strong></div>
 <div class="stat">ATR<br><strong>ATR 14</strong></div>
 <div class="stat">Suporte e resistência<br><strong>Análise técnica</strong></div>
 </div>
-</div><footer>
+</div>
+
+<footer>
 KILLCRITIC-SBC © 2026<br>
 Universal Forex • Metais • Crypto
-</footer></div><script>
+</footer>
+
+</div>
+</div>
+
+<!-- FIREBASE AUTHENTICATION -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+<script>
+const firebaseConfig = {
+apiKey: "AIzaSyDk57iDouS_LyTKVbcusMoHptS6q4frkuQ",
+authDomain: "killcritic-sbc.firebaseapp.com",
+projectId: "killcritic-sbc",
+storageBucket: "killcritic-sbc.firebasestorage.app",
+messagingSenderId: "707883297164",
+appId: "1:707883297164:web:638a60c4ed83c973e14ea9"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+
+const authPanel = document.getElementById("authPanel");
+const appPanel = document.getElementById("appPanel");
+const authMessage = document.getElementById("authMessage");
+
+let registerMode = false;
+let refreshTimer = null;
+
+function showMessage(message, error = false) {
+authMessage.textContent = message;
+authMessage.style.color = error ? "#ff6475" : "#27d9a0";
+}
+
+function firebaseError(error) {
+const messages = {
+"auth/email-already-in-use": "Este e-mail já tem uma conta.",
+"auth/invalid-email": "O e-mail não é válido.",
+"auth/weak-password": "A palavra-passe deve ter pelo menos 6 caracteres.",
+"auth/user-not-found": "Não existe conta com este e-mail.",
+"auth/wrong-password": "Palavra-passe incorreta.",
+"auth/invalid-credential": "E-mail ou palavra-passe incorretos.",
+"auth/too-many-requests": "Muitas tentativas. Aguarda um pouco.",
+"auth/network-request-failed": "Problema de ligação à internet."
+};
+
+return messages[error.code] || "Não foi possível concluir. " + error.message;
+}
+
+document.getElementById("showRegister").addEventListener("click", () => {
+registerMode = !registerMode;
+
+document.getElementById("authTitle").textContent =
+registerMode ? "Criar conta" : "Iniciar sessão";
+
+document.getElementById("loginButton").textContent =
+registerMode ? "REGISTAR CONTA" : "ENTRAR";
+
+document.getElementById("showRegister").textContent =
+registerMode ? "VOLTAR AO LOGIN" : "CRIAR CONTA";
+
+document.getElementById("password").value = "";
+showMessage("");
+});
+
+document.getElementById("loginForm").addEventListener("submit", async (event) => {
+event.preventDefault();
+
+const email = document.getElementById("email").value.trim();
+const password = document.getElementById("password").value;
+const button = document.getElementById("loginButton");
+
+button.disabled = true;
+showMessage(registerMode ? "A criar conta..." : "A iniciar sessão...");
+
+try {
+if(registerMode) {
+await auth.createUserWithEmailAndPassword(email, password);
+showMessage("Conta criada com sucesso!");
+} else {
+await auth.signInWithEmailAndPassword(email, password);
+}
+} catch(error) {
+showMessage(firebaseError(error), true);
+} finally {
+button.disabled = false;
+}
+});
+
+document.getElementById("resetButton").addEventListener("click", async () => {
+const email = document.getElementById("email").value.trim();
+
+if(!email) {
+showMessage("Escreve primeiro o teu e-mail.", true);
+return;
+}
+
+try {
+await auth.sendPasswordResetEmail(email);
+showMessage("Enviámos um link de recuperação para o teu e-mail.");
+} catch(error) {
+showMessage(firebaseError(error), true);
+}
+});
+
+document.getElementById("logoutButton").addEventListener("click", async () => {
+await auth.signOut();
+});
+
+auth.onAuthStateChanged(user => {
+if(user) {
+authPanel.style.display = "none";
+appPanel.style.display = "block";
+
+document.getElementById("userEmail").textContent = user.email;
+
+if(typeof loadAssets === "function") {
+loadAssets();
+}
+} else {
+appPanel.style.display = "none";
+authPanel.style.display = "block";
+
+if(refreshTimer) {
+clearInterval(refreshTimer);
+refreshTimer = null;
+}
+}
+});
+</script>
+
+<!-- SISTEMA DE ANÁLISE -->
+<script>
 const assets = {
 forex: [
 ["EUR/USD","FX:EURUSD"],
@@ -150,6 +363,8 @@ return null;
 }
 
 function loadAssets() {
+if(!auth.currentUser) return;
+
 const category = document.getElementById("category").value;
 const select = document.getElementById("asset");
 
@@ -183,6 +398,8 @@ changeChart();
 }
 
 function changeChart() {
+if(!auth.currentUser) return;
+
 const select = document.getElementById("asset");
 const symbol = select.value;
 
@@ -212,6 +429,8 @@ updateSignal();
 }
 
 async function updateSignal() {
+if(!auth.currentUser) return;
+
 const rawSymbol = document.getElementById("asset").value;
 const timeframe = document.getElementById("timeframe").value;
 
@@ -268,12 +487,7 @@ document.getElementById("signalResult").innerHTML =
 }
 }
 
-loadAssets();
+</script>
 
-setInterval(() => {
-if(document.getElementById("asset").value) {
-updateSignal();
-}
-}, 60000);
-</script></body>
-    </html>
+</body>
+</html>
