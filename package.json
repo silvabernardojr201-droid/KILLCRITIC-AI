@@ -1,13 +1,14 @@
 {
-  "name": "killcritic-ai",
-  "version": "1.0.0",
-  "description": "KILLCRITIC AI - Forex Analysis Bot",
+  "name": "killcritic-sbc",
+  "version": "2.0.0",
+  "description": "KILLCRITIC-SBC - Universal Market Analysis",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "firebase-admin": "^13.5.0"
   },
   "engines": {
     "node": ">=18"
