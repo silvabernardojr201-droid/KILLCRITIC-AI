@@ -1,14 +1,14 @@
 {
   "name": "killcritic-sbc",
-  "version": "2.0.0",
-  "description": "KILLCRITIC-SBC - Universal Market Analysis",
+  "version": "3.0.0",
+  "private": true,
+  "description": "KILLCRITIC-SBC market analysis server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "firebase-admin": "^13.5.0"
+    "express": "^4.21.2"
   },
   "engines": {
     "node": ">=18"

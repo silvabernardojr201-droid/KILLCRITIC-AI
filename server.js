@@ -1,289 +1,53 @@
 const express = require("express");
-
+const path = require("path");
 const app = express();
-
 app.use(express.json());
-app.use(express.static("public"));
-
-const PORT = process.env.PORT || 3000;
-const API_KEY = process.env.TWELVE_DATA_API;
-
-// Ativos configurados
-const PAIRS = [
-  // Forex
-  "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF",
-  "USD/CAD", "AUD/USD", "NZD/USD", "EUR/GBP",
-  "EUR/JPY", "GBP/JPY", "EUR/CHF", "EUR/CAD",
-  "AUD/JPY", "GBP/CHF", "AUD/CAD", "AUD/NZD",
-  "CAD/JPY", "CHF/JPY", "EUR/AUD", "EUR/NZD",
-  "GBP/AUD", "GBP/CAD", "NZD/JPY",
-
-  // Metais
-  "XAU/USD", "XAG/USD",
-
-  // Criptomoedas
-  "BTC/USD", "ETH/USD", "BNB/USD",
-  "SOL/USD", "XRP/USD"
-];
-
-// Timeframes suportados pela API
-const ALLOWED_INTERVALS = [
-  "1min", "5min", "15min",
-  "30min", "1h", "4h", "1day"
-];
-
-// Precisão dos preços
-function getDecimals(symbol) {
-  if (symbol.includes("JPY")) return 3;
-  if (symbol.startsWith("XAU") || symbol.startsWith("XAG")) return 2;
-  if (symbol.includes("BTC") || symbol.includes("ETH")) return 2;
-  return 5;
+app.use(express.static(path.join(__dirname,"public")));
+const PORT=process.env.PORT||3000;
+const TD=process.env.TWELVE_DATA_API;
+const ALLOWED=["1min","5min","15min","30min","1h","4h","1day"];
+const ASSETS={
+ forex:["EUR/USD","GBP/USD","USD/JPY","USD/CHF","USD/CAD","AUD/USD","NZD/USD","EUR/GBP","EUR/JPY","GBP/JPY","EUR/CHF","EUR/CAD","AUD/JPY","GBP/CHF","AUD/CAD","AUD/NZD","CAD/JPY","CHF/JPY","EUR/AUD","EUR/NZD","GBP/AUD","GBP/CAD","NZD/JPY"],
+ metals:["XAU/USD","XAG/USD"],
+ crypto:["BTC/USD","ETH/USD","BNB/USD","SOL/USD","XRP/USD"]
+};
+const cache=new Map();
+const decimals=s=>s.includes("JPY")?3:(s.startsWith("XAU")||s.startsWith("XAG"))?2:(s.startsWith("BTC")||s.startsWith("ETH"))?2:5;
+function ema(a,p){let k=2/(p+1),v=a[0];for(let i=1;i<a.length;i++)v=a[i]*k+v*(1-k);return v;}
+function rsi(a,p=14){let g=0,l=0;for(let i=a.length-p;i<a.length;i++){let d=a[i]-a[i-1];if(d>0)g+=d;else l-=d;}if(l===0)return 100;return 100-100/(1+(g/p)/(l/p));}
+function atr(c,p=14){let t=[];for(let i=1;i<c.length;i++){let h=+c[i].high,l=+c[i].low,pc=+c[i-1].close;t.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));}return t.slice(-p).reduce((x,y)=>x+y,0)/Math.min(p,t.length);}
+function macd(a){return ema(a.slice(-40),12)-ema(a.slice(-40),26);}
+function round(x,d){return Number.isFinite(x)?+x.toFixed(d):null;}
+async function candles(symbol,interval){
+ if(!TD)throw Error("TWELVE_DATA_API não configurada no servidor.");
+ const key=symbol+"|"+interval,old=cache.get(key);
+ if(old&&Date.now()-old.time<30000)return old.data;
+ const u=new URL("https://api.twelvedata.com/time_series");
+ Object.entries({symbol,interval,outputsize:"120",apikey:TD}).forEach(([k,v])=>u.searchParams.set(k,v));
+ const r=await fetch(u);const j=await r.json();
+ if(!r.ok||j.status==="error"||!j.values)throw Error(j.message||"Fornecedor não devolveu candles.");
+ const c=j.values.slice().reverse();
+ if(c.length<40)throw Error("Dados insuficientes: são necessárias pelo menos 40 velas.");
+ cache.set(key,{time:Date.now(),data:c});return c;
 }
-
-// EMA
-function calculateEMA(data, period) {
-  const multiplier = 2 / (period + 1);
-  let ema = data[0];
-
-  for (let i = 1; i < data.length; i++) {
-    ema = (data[i] - ema) * multiplier + ema;
-  }
-
-  return ema;
-}
-
-// RSI
-function calculateRSI(data, period = 14) {
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = data.length - period; i < data.length; i++) {
-    const change = data[i] - data[i - 1];
-
-    if (change > 0) {
-      gains += change;
-    } else {
-      losses -= change;
-    }
-  }
-
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-
-  if (avgLoss === 0) return 100;
-
-  const rs = avgGain / avgLoss;
-
-  return 100 - (100 / (1 + rs));
-}
-
-// ATR
-function calculateATR(candles, period = 14) {
-  const ranges = [];
-
-  for (let i = 1; i < candles.length; i++) {
-    const current = candles[i];
-    const previous = candles[i - 1];
-
-    const high = Number(current.high);
-    const low = Number(current.low);
-    const previousClose = Number(previous.close);
-
-    const tr = Math.max(
-      high - low,
-      Math.abs(high - previousClose),
-      Math.abs(low - previousClose)
-    );
-
-    ranges.push(tr);
-  }
-
-  const recent = ranges.slice(-period);
-
-  if (!recent.length) return 0;
-
-  return recent.reduce((a, b) => a + b, 0) / recent.length;
-}
-
-// Formatação numérica
-function formatPrice(value, decimals) {
-  if (value === null || !Number.isFinite(value)) return null;
-  return Number(value.toFixed(decimals));
-}
-
-// Página inicial
-app.get("/", (req, res) => {
-  res.sendFile(__dirname + "/public/index.html");
+app.get("/api/status",(q,s)=>s.json({name:"KILLCRITIC-SBC",status:"online",provider:TD?"Twelve Data configurada":"API em falta",execution:"MT5 requer EA e terminal/VPS"}));
+app.get("/api/assets",(q,s)=>s.json({assets:ASSETS,indices:{status:"not_configured",message:"Índices exigem fornecedor que cubra os símbolos e a corretora escolhida."}}));
+app.get("/api/analyze",async(q,s)=>{
+ try{
+  const symbol=String(q.query.symbol||"EUR/USD").toUpperCase(),interval=String(q.query.interval||"15min");
+  if(!ALLOWED.includes(interval))return s.status(400).json({error:"Timeframe inválido."});
+  const supported=Object.values(ASSETS).flat();
+  if(!supported.includes(symbol))return s.status(400).json({error:"Ativo ainda não configurado para esta fonte.",symbol});
+  const c=await candles(symbol,interval),cl=c.map(x=>+x.close),d=decimals(symbol);
+  const e9=ema(cl.slice(-60),9),e21=ema(cl.slice(-80),21),rv=rsi(cl),av=atr(c),m=macd(cl),price=cl.at(-1);
+  if(!(av>0))throw Error("ATR inválido; sem níveis de risco fiáveis.");
+  const bullish=e9>e21&&rv>=52&&rv<70&&m>0;
+  const bearish=e9<e21&&rv<=48&&rv>30&&m<0;
+  const signal=bullish?"BUY":bearish?"SELL":"AGUARDAR";
+  const entry=price, sl=signal==="BUY"?price-1.5*av:signal==="SELL"?price+1.5*av:null;
+  const tps=signal==="BUY"?[price+1.5*av,price+2.25*av,price+3*av]:signal==="SELL"?[price-1.5*av,price-2.25*av,price-3*av]:[null,null,null];
+  const risk=signal==="AGUARDAR"?null:Math.abs(entry-sl);
+  s.json({provider:"Twelve Data",symbol,interval,asOf:c.at(-1).datetime,analysis:{signal,direction:signal==="BUY"?"COMPRA":signal==="SELL"?"VENDA":"AGUARDAR",entry:round(entry,d),stopLoss:round(sl,d),tp1:round(tps[0],d),tp2:round(tps[1],d),tp3:round(tps[2],d),riskReward:signal==="AGUARDAR"?null:"1:1 / 1:1.5 / 1:2"},indicators:{ema9:round(e9,d),ema21:round(e21,d),rsi14:round(rv,2),macd:round(m,d),atr14:round(av,d)},market:{lastPrice:round(price,d),lastCandle:c.at(-1).datetime},warning:"Análise técnica probabilística; não garante lucro. Verifique spread, slippage e regras do instrumento."});
+ }catch(e){s.status(502).json({error:e.message});}
 });
-
-// Estado do bot
-app.get("/api/status", (req, res) => {
-  res.json({
-    bot: "KILLCRITIC-AI",
-    status: "ONLINE",
-    market: "Forex, Metais e Criptomoedas",
-    apiConfigured: Boolean(API_KEY)
-  });
-});
-
-// Lista de ativos
-app.get("/api/pairs", (req, res) => {
-  res.json({
-    total: PAIRS.length,
-    pairs: PAIRS
-  });
-});
-
-// Análise do mercado
-app.get("/api/analyze", async (req, res) => {
-  try {
-    const symbol = (req.query.symbol || "EUR/USD").toUpperCase();
-    const interval = req.query.interval || "15min";
-
-    if (!API_KEY) {
-      return res.status(503).json({
-        error: "API KEY não configurada.",
-        instruction: "Configure TWELVE_DATA_API no Render."
-      });
-    }
-
-    if (!PAIRS.includes(symbol)) {
-      return res.status(400).json({
-        error: "Ativo não suportado.",
-        availablePairs: PAIRS
-      });
-    }
-
-    if (!ALLOWED_INTERVALS.includes(interval)) {
-      return res.status(400).json({
-        error: "Timeframe inválido.",
-        allowedIntervals: ALLOWED_INTERVALS
-      });
-    }
-
-    const url = new URL(
-      "https://api.twelvedata.com/time_series"
-    );
-
-    url.searchParams.set("symbol", symbol);
-    url.searchParams.set("interval", interval);
-    url.searchParams.set("outputsize", "100");
-    url.searchParams.set("apikey", API_KEY);
-
-    const response = await fetch(url);
-    const result = await response.json();
-
-    if (!response.ok || result.status === "error") {
-      return res.status(502).json({
-        error: "Não foi possível obter dados do mercado.",
-        details: result.message || "Erro na Twelve Data."
-      });
-    }
-
-    if (!result.values || result.values.length < 30) {
-      return res.status(502).json({
-        error: "Dados insuficientes para análise."
-      });
-    }
-
-    const candles = result.values.slice().reverse();
-
-    const closes = candles.map(c => Number(c.close));
-
-    if (closes.some(value => !Number.isFinite(value))) {
-      return res.status(502).json({
-        error: "Dados de preços inválidos."
-      });
-    }
-
-    const price = closes[closes.length - 1];
-
-    const ema9 = calculateEMA(closes.slice(-30), 9);
-    const ema21 = calculateEMA(closes.slice(-50), 21);
-    const rsi = calculateRSI(closes);
-    const atr = calculateATR(candles);
-
-    // Sinal e níveis de operação
-    let signal = "AGUARDAR";
-    let entry = price;
-    let stopLoss = null;
-    let tp1 = null;
-    let tp2 = null;
-    let tp3 = null;
-
-    if (ema9 > ema21 && rsi > 50 && rsi < 70) {
-      signal = "BUY";
-
-      stopLoss = price - (atr * 1.5);
-      tp1 = price + (atr * 1.5);
-      tp2 = price + (atr * 2);
-      tp3 = price + (atr * 3);
-
-    } else if (ema9 < ema21 && rsi < 50 && rsi > 30) {
-      signal = "SELL";
-
-      stopLoss = price + (atr * 1.5);
-      tp1 = price - (atr * 1.5);
-      tp2 = price - (atr * 2);
-      tp3 = price - (atr * 3);
-    }
-
-    const decimals = getDecimals(symbol);
-
-    // Resultado da análise
-    return res.json({
-      bot: "KILLCRITIC-AI",
-      pair: symbol,
-      timeframe: interval,
-
-      analysis: {
-        signal,
-
-        direction: signal === "BUY"
-          ? "COMPRA"
-          : signal === "SELL"
-          ? "VENDA"
-          : "AGUARDAR",
-
-        entry: formatPrice(entry, decimals),
-        stopLoss: formatPrice(stopLoss, decimals),
-
-        tp1: formatPrice(tp1, decimals),
-        tp2: formatPrice(tp2, decimals),
-        tp3: formatPrice(tp3, decimals),
-
-        // Compatibilidade com versões antigas do painel
-        takeProfit: formatPrice(tp3, decimals),
-
-        riskReward: "1:2"
-      },
-
-      indicators: {
-        EMA9: formatPrice(ema9, decimals),
-        EMA21: formatPrice(ema21, decimals),
-        RSI14: Number(rsi.toFixed(2)),
-        ATR14: formatPrice(atr, decimals)
-      },
-
-      market: {
-        currentPrice: formatPrice(price, decimals),
-        lastCandle: candles[candles.length - 1].datetime
-      },
-
-      warning: "Sinal técnico, não é garantia de lucro."
-    });
-
-  } catch (error) {
-    console.error("Erro na análise:", error);
-
-    return res.status(500).json({
-      error: "Erro interno na análise.",
-      details: error.message
-    });
-  }
-});
-
-// Inicialização
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`KILLCRITIC-AI ONLINE na porta ${PORT}`);
-});
+app.listen(PORT,"0.0.0.0",()=>console.log("KILLCRITIC-SBC online na porta "+PORT));
