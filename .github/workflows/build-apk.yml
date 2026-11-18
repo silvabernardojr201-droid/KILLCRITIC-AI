@@ -35,6 +35,7 @@ jobs:
         run: |
           ls -lh app/build/outputs/apk/debug/
           file app/build/outputs/apk/debug/app-debug.apk
+          unzip -l app/build/outputs/apk/debug/app-debug.apk
           test -s app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
