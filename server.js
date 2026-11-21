@@ -1,53 +1,384 @@
 const express = require("express");
 const path = require("path");
+
 const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname,"public")));
-const PORT=process.env.PORT||3000;
-const TD=process.env.TWELVE_DATA_API;
-const ALLOWED=["1min","5min","15min","30min","1h","4h","1day"];
-const ASSETS={
- forex:["EUR/USD","GBP/USD","USD/JPY","USD/CHF","USD/CAD","AUD/USD","NZD/USD","EUR/GBP","EUR/JPY","GBP/JPY","EUR/CHF","EUR/CAD","AUD/JPY","GBP/CHF","AUD/CAD","AUD/NZD","CAD/JPY","CHF/JPY","EUR/AUD","EUR/NZD","GBP/AUD","GBP/CAD","NZD/JPY"],
- metals:["XAU/USD","XAG/USD"],
- crypto:["BTC/USD","ETH/USD","BNB/USD","SOL/USD","XRP/USD"]
-};
-const cache=new Map();
-const decimals=s=>s.includes("JPY")?3:(s.startsWith("XAU")||s.startsWith("XAG"))?2:(s.startsWith("BTC")||s.startsWith("ETH"))?2:5;
-function ema(a,p){let k=2/(p+1),v=a[0];for(let i=1;i<a.length;i++)v=a[i]*k+v*(1-k);return v;}
-function rsi(a,p=14){let g=0,l=0;for(let i=a.length-p;i<a.length;i++){let d=a[i]-a[i-1];if(d>0)g+=d;else l-=d;}if(l===0)return 100;return 100-100/(1+(g/p)/(l/p));}
-function atr(c,p=14){let t=[];for(let i=1;i<c.length;i++){let h=+c[i].high,l=+c[i].low,pc=+c[i-1].close;t.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));}return t.slice(-p).reduce((x,y)=>x+y,0)/Math.min(p,t.length);}
-function macd(a){return ema(a.slice(-40),12)-ema(a.slice(-40),26);}
-function round(x,d){return Number.isFinite(x)?+x.toFixed(d):null;}
-async function candles(symbol,interval){
- if(!TD)throw Error("TWELVE_DATA_API não configurada no servidor.");
- const key=symbol+"|"+interval,old=cache.get(key);
- if(old&&Date.now()-old.time<30000)return old.data;
- const u=new URL("https://api.twelvedata.com/time_series");
- Object.entries({symbol,interval,outputsize:"120",apikey:TD}).forEach(([k,v])=>u.searchParams.set(k,v));
- const r=await fetch(u);const j=await r.json();
- if(!r.ok||j.status==="error"||!j.values)throw Error(j.message||"Fornecedor não devolveu candles.");
- const c=j.values.slice().reverse();
- if(c.length<40)throw Error("Dados insuficientes: são necessárias pelo menos 40 velas.");
- cache.set(key,{time:Date.now(),data:c});return c;
+const PORT = process.env.PORT || 3000;
+
+app.use(express.json({ limit: "2mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+
+const TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
+
+function ema(values, period) {
+  if (values.length < period) return null;
+
+  const k = 2 / (period + 1);
+  let result = values.slice(0, period)
+    .reduce((a, b) => a + b, 0) / period;
+
+  for (let i = period; i < values.length; i++) {
+    result = values[i] * k + result * (1 - k);
+  }
+
+  return result;
 }
-app.get("/api/status",(q,s)=>s.json({name:"KILLCRITIC-SBC",status:"online",provider:TD?"Twelve Data configurada":"API em falta",execution:"MT5 requer EA e terminal/VPS"}));
-app.get("/api/assets",(q,s)=>s.json({assets:ASSETS,indices:{status:"not_configured",message:"Índices exigem fornecedor que cubra os símbolos e a corretora escolhida."}}));
-app.get("/api/analyze",async(q,s)=>{
- try{
-  const symbol=String(q.query.symbol||"EUR/USD").toUpperCase(),interval=String(q.query.interval||"15min");
-  if(!ALLOWED.includes(interval))return s.status(400).json({error:"Timeframe inválido."});
-  const supported=Object.values(ASSETS).flat();
-  if(!supported.includes(symbol))return s.status(400).json({error:"Ativo ainda não configurado para esta fonte.",symbol});
-  const c=await candles(symbol,interval),cl=c.map(x=>+x.close),d=decimals(symbol);
-  const e9=ema(cl.slice(-60),9),e21=ema(cl.slice(-80),21),rv=rsi(cl),av=atr(c),m=macd(cl),price=cl.at(-1);
-  if(!(av>0))throw Error("ATR inválido; sem níveis de risco fiáveis.");
-  const bullish=e9>e21&&rv>=52&&rv<70&&m>0;
-  const bearish=e9<e21&&rv<=48&&rv>30&&m<0;
-  const signal=bullish?"BUY":bearish?"SELL":"AGUARDAR";
-  const entry=price, sl=signal==="BUY"?price-1.5*av:signal==="SELL"?price+1.5*av:null;
-  const tps=signal==="BUY"?[price+1.5*av,price+2.25*av,price+3*av]:signal==="SELL"?[price-1.5*av,price-2.25*av,price-3*av]:[null,null,null];
-  const risk=signal==="AGUARDAR"?null:Math.abs(entry-sl);
-  s.json({provider:"Twelve Data",symbol,interval,asOf:c.at(-1).datetime,analysis:{signal,direction:signal==="BUY"?"COMPRA":signal==="SELL"?"VENDA":"AGUARDAR",entry:round(entry,d),stopLoss:round(sl,d),tp1:round(tps[0],d),tp2:round(tps[1],d),tp3:round(tps[2],d),riskReward:signal==="AGUARDAR"?null:"1:1 / 1:1.5 / 1:2"},indicators:{ema9:round(e9,d),ema21:round(e21,d),rsi14:round(rv,2),macd:round(m,d),atr14:round(av,d)},market:{lastPrice:round(price,d),lastCandle:c.at(-1).datetime},warning:"Análise técnica probabilística; não garante lucro. Verifique spread, slippage e regras do instrumento."});
- }catch(e){s.status(502).json({error:e.message});}
+
+function rsi(values, period = 14) {
+  if (values.length <= period) return null;
+
+  let gains = 0;
+  let losses = 0;
+
+  for (let i = 1; i <= period; i++) {
+    const change = values[i] - values[i - 1];
+
+    if (change > 0) gains += change;
+    else losses -= change;
+  }
+
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+
+  for (let i = period + 1; i < values.length; i++) {
+    const change = values[i] - values[i - 1];
+
+    avgGain = (avgGain * (period - 1) +
+      Math.max(change, 0)) / period;
+
+    avgLoss = (avgLoss * (period - 1) +
+      Math.max(-change, 0)) / period;
+  }
+
+  if (avgLoss === 0) return 100;
+
+  return 100 - 100 / (1 + avgGain / avgLoss);
+}
+
+function atr(candles, period = 14) {
+  if (candles.length <= period) return null;
+
+  const ranges = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const current = candles[i];
+    const previous = candles[i - 1];
+
+    ranges.push(Math.max(
+      current.high - current.low,
+      Math.abs(current.high - previous.close),
+      Math.abs(current.low - previous.close)
+    ));
+  }
+
+  return ranges.slice(-period)
+    .reduce((a, b) => a + b, 0) / period;
+}
+
+function round(value, digits = 5) {
+  return Number(value.toFixed(digits));
+}
+
+function analyze({ symbol, timeframe, candles, pipSize }) {
+
+  if (!Array.isArray(candles) || candles.length < 60) {
+    throw new Error("São necessárias pelo menos 60 velas.");
+  }
+
+  const data = candles.map(c => ({
+    open: Number(c.open),
+    high: Number(c.high),
+    low: Number(c.low),
+    close: Number(c.close)
+  }));
+
+  for (const c of data) {
+    if (
+      !Number.isFinite(c.open) ||
+      !Number.isFinite(c.high) ||
+      !Number.isFinite(c.low) ||
+      !Number.isFinite(c.close) ||
+      c.high < c.low
+    ) {
+      throw new Error("Dados das velas inválidos.");
+    }
+  }
+
+  const closes = data.map(c => c.close);
+  const price = closes[closes.length - 1];
+
+  const ema9 = ema(closes, 9);
+  const ema21 = ema(closes, 21);
+  const ema50 = ema(closes, 50);
+  const ema200 = ema(closes, 200);
+
+  const rsi14 = rsi(closes);
+  const atr14 = atr(data);
+
+  const macdValues = [];
+
+  for (let i = 25; i < closes.length; i++) {
+    const sample = closes.slice(0, i + 1);
+
+    macdValues.push(
+      ema(sample, 12) - ema(sample, 26)
+    );
+  }
+
+  const macd = macdValues[macdValues.length - 1];
+
+  const macdSignal = macdValues.length >= 9
+    ? ema(macdValues, 9)
+    : null;
+
+  const bullish = [];
+  const bearish = [];
+
+  if (ema9 > ema21) bullish.push("EMA 9 acima da EMA 21");
+  else bearish.push("EMA 9 abaixo da EMA 21");
+
+  if (ema21 > ema50) bullish.push("EMA 21 acima da EMA 50");
+  else bearish.push("EMA 21 abaixo da EMA 50");
+
+  if (price > ema50) bullish.push("Preço acima da EMA 50");
+  else bearish.push("Preço abaixo da EMA 50");
+
+  if (rsi14 >= 52 && rsi14 <= 70) {
+    bullish.push("RSI favorece compradores");
+  }
+
+  if (rsi14 <= 48 && rsi14 >= 30) {
+    bearish.push("RSI favorece vendedores");
+  }
+
+  if (macdSignal !== null && macd > macdSignal) {
+    bullish.push("MACD positivo");
+  }
+
+  if (macdSignal !== null && macd < macdSignal) {
+    bearish.push("MACD negativo");
+  }
+
+  let direction = "WAIT";
+  let score = 45;
+  let reasons = [
+    "Confluência insuficiente. Aguardar confirmação."
+  ];
+
+  if (
+    bullish.length >= 4 &&
+    bullish.length > bearish.length &&
+    rsi14 < 75
+  ) {
+    direction = "BUY";
+    score = Math.min(
+      95,
+      55 + bullish.length * 8 - bearish.length * 4
+    );
+
+    reasons = bullish;
+
+  } else if (
+    bearish.length >= 4 &&
+    bearish.length > bullish.length &&
+    rsi14 > 25
+  ) {
+    direction = "SELL";
+    score = Math.min(
+      95,
+      55 + bearish.length * 8 - bullish.length * 4
+    );
+
+    reasons = bearish;
+  } else {
+    reasons = reasons.concat(
+      bullish.length >= bearish.length
+        ? bullish
+        : bearish
+    );
+  }
+
+  const pip = Number(pipSize) > 0
+    ? Number(pipSize)
+    : (/JPY/i.test(symbol) ? 0.01 : 0.0001);
+
+  const digits = pip >= 0.1 ? 2 : pip >= 0.001 ? 3 : 5;
+
+  let entry = null;
+  let stopLoss = null;
+  let targets = [null, null, null];
+  let riskPips = null;
+
+  if (direction !== "WAIT" && atr14 > 0) {
+
+    entry = price;
+
+    const distance = Math.max(
+      atr14 * 1.5,
+      pip * 5
+    );
+
+    if (direction === "BUY") {
+      stopLoss = entry - distance;
+
+      targets = [
+        entry + distance,
+        entry + distance * 2,
+        entry + distance * 3
+      ];
+
+    } else {
+      stopLoss = entry + distance;
+
+      targets = [
+        entry - distance,
+        entry - distance * 2,
+        entry - distance * 3
+      ];
+    }
+
+    riskPips = Math.abs(entry - stopLoss) / pip;
+  }
+
+  const recent = data.slice(-20);
+
+  const recentHigh = Math.max(
+    ...recent.map(c => c.high)
+  );
+
+  const recentLow = Math.min(
+    ...recent.map(c => c.low)
+  );
+
+  return {
+
+    symbol,
+    timeframe,
+    direction,
+
+    quality: score >= 80
+      ? "FORTE"
+      : score >= 65
+        ? "NORMAL"
+        : "FRACA",
+
+    score,
+
+    price: round(price, digits),
+
+    entry: entry === null
+      ? null
+      : round(entry, digits),
+
+    stopLoss: stopLoss === null
+      ? null
+      : round(stopLoss, digits),
+
+    takeProfits: {
+      tp1: targets[0] === null ? null : round(targets[0], digits),
+      tp2: targets[1] === null ? null : round(targets[1], digits),
+      tp3: targets[2] === null ? null : round(targets[2], digits)
+    },
+
+    riskPips: riskPips === null
+      ? null
+      : round(riskPips, 1),
+
+    rewardPips: riskPips === null
+      ? null
+      : {
+          tp1: round(riskPips, 1),
+          tp2: round(riskPips * 2, 1),
+          tp3: round(riskPips * 3, 1)
+        },
+
+    indicators: {
+      ema9: round(ema9, digits),
+      ema21: round(ema21, digits),
+      ema50: round(ema50, digits),
+
+      ema200: ema200 === null
+        ? null
+        : round(ema200, digits),
+
+      rsi14: round(rsi14, 2),
+      macd: round(macd, digits),
+
+      macdSignal: macdSignal === null
+        ? null
+        : round(macdSignal, digits),
+
+      atr14: round(atr14, digits)
+    },
+
+    marketStructure: {
+      recentHigh: round(recentHigh, digits),
+      recentLow: round(recentLow, digits)
+    },
+
+    reasons,
+
+    warning:
+      "Análise técnica experimental. Não garante lucro. Confirmar spread, execução e risco antes de operar."
+  };
+}
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "online",
+    application: "SBC-ULTIMATE",
+    engine: "technical-analysis-v1",
+    marketData: "not_connected",
+    message:
+      "Motor online. Falta ligar uma fonte real de velas do MT5."
+  });
 });
-app.listen(PORT,"0.0.0.0",()=>console.log("KILLCRITIC-SBC online na porta "+PORT));
+
+app.post("/api/analyze", (req, res) => {
+
+  try {
+    const {
+      symbol,
+      timeframe,
+      candles,
+      pipSize
+    } = req.body || {};
+
+    if (!symbol || typeof symbol !== "string") {
+      throw new Error(
+        "Indica um símbolo, por exemplo EURUSDm ou XAUUSDm."
+      );
+    }
+
+    if (!TIMEFRAMES.includes(timeframe)) {
+      throw new Error(
+        "Timeframe inválido."
+      );
+    }
+
+    const result = analyze({
+      symbol,
+      timeframe,
+      candles,
+      pipSize
+    });
+
+    res.json(result);
+
+  } catch (error) {
+    res.status(400).json({
+      error: error.message
+    });
+  }
+});
+
+app.get("*", (req, res) => {
+  res.sendFile(
+    path.join(__dirname, "public", "index.html")
+  );
+});
+
+app.listen(PORT, () => {
+  console.log(
+    `SBC-ULTIMATE online na porta ${PORT}`
+  );
+});
