@@ -1,12 +1,11 @@
 const express = require("express");
-const path = require("path");
-
+const https = require("https");
 const app = express();
+
+app.use(express.json());
+app.use(express.static("public"));
+
 const PORT = process.env.PORT || 3000;
-
-app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
-
 const API_KEY = process.env.TWELVE_DATA_API;
 
 const INTERVALS = {
@@ -15,23 +14,58 @@ const INTERVALS = {
   M15: "15min",
   M30: "30min",
   H1: "1h",
-  H4: "4h"
+  H4: "4h",
+  D1: "1day"
 };
 
 const SYMBOLS = {
   EURUSD: "EUR/USD",
-  "EUR/USD": "EUR/USD",
+  GBPUSD: "GBP/USD",
+  USDJPY: "USD/JPY",
+  USDCHF: "USD/CHF",
+  AUDUSD: "AUD/USD",
+  USDCAD: "USD/CAD",
+  NZDUSD: "NZD/USD",
+  EURJPY: "EUR/JPY",
+  GBPJPY: "GBP/JPY",
+  EURGBP: "EUR/GBP",
   XAUUSD: "XAU/USD",
-  "XAU/USD": "XAU/USD"
+  XAGUSD: "XAG/USD",
+  BTCUSD: "BTC/USD",
+  ETHUSD: "ETH/USD"
 };
+
+const cache = new Map();
+const CACHE_TIME = 15000;
+
+function requestJSON(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, response => {
+      let body = "";
+
+      response.on("data", chunk => body += chunk);
+      response.on("end", () => {
+        try {
+          const data = JSON.parse(body);
+
+          if (response.statusCode !== 200 || data.status === "error" || data.code) {
+            return reject(new Error(data.message || "Erro no fornecedor de dados."));
+          }
+
+          resolve(data);
+        } catch {
+          reject(new Error("Resposta inválida do fornecedor de dados."));
+        }
+      });
+    }).on("error", reject);
+  });
+}
 
 function ema(values, period) {
   if (values.length < period) return null;
 
   const multiplier = 2 / (period + 1);
-  let result = values
-    .slice(0, period)
-    .reduce((a, b) => a + b, 0) / period;
+  let result = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
 
   for (let i = period; i < values.length; i++) {
     result = (values[i] - result) * multiplier + result;
@@ -46,20 +80,26 @@ function rsi(values, period = 14) {
   let gains = 0;
   let losses = 0;
 
-  for (let i = values.length - period; i < values.length; i++) {
+  for (let i = 1; i <= period; i++) {
     const change = values[i] - values[i - 1];
-
     if (change > 0) gains += change;
     else losses -= change;
   }
 
-  const averageGain = gains / period;
-  const averageLoss = losses / period;
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
 
-  if (averageLoss === 0) return 100;
+  for (let i = period + 1; i < values.length; i++) {
+    const change = values[i] - values[i - 1];
 
-  const rs = averageGain / averageLoss;
-  return 100 - 100 / (1 + rs);
+    avgGain = (avgGain * (period - 1) + Math.max(change, 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + Math.max(-change, 0)) / period;
+  }
+
+  if (avgLoss === 0) return 100;
+
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
 }
 
 function atr(candles, period = 14) {
@@ -71,156 +111,245 @@ function atr(candles, period = 14) {
     const current = candles[i];
     const previous = candles[i - 1];
 
-    ranges.push(
-      Math.max(
-        current.high - current.low,
-        Math.abs(current.high - previous.close),
-        Math.abs(current.low - previous.close)
-      )
-    );
+    ranges.push(Math.max(
+      current.high - current.low,
+      Math.abs(current.high - previous.close),
+      Math.abs(current.low - previous.close)
+    ));
   }
 
-  const recent = ranges.slice(-period);
-  return recent.reduce((a, b) => a + b, 0) / recent.length;
+  return ranges.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-function macd(values) {
-  if (values.length < 35) return null;
+function calculateMACD(values) {
+  const fast = [];
+  const slow = [];
 
-  const fast = ema(values, 12);
-  const slow = ema(values, 26);
+  for (let i = 0; i < values.length; i++) {
+    fast.push(ema(values.slice(0, i + 1), 12));
+    slow.push(ema(values.slice(0, i + 1), 26));
+  }
 
-  if (fast === null || slow === null) return null;
+  const macdLine = fast.map((value, i) =>
+    value !== null && slow[i] !== null ? value - slow[i] : null
+  ).filter(value => value !== null);
 
-  return fast - slow;
+  const signal = ema(macdLine, 9);
+  const current = macdLine[macdLine.length - 1];
+
+  return {
+    line: current,
+    signal,
+    histogram: signal === null ? null : current - signal
+  };
 }
 
-function getPipSize(symbol) {
-  if (symbol.includes("XAU")) return 0.01;
-  if (symbol.includes("JPY")) return 0.01;
-  return 0.0001;
+function candlePattern(candles) {
+  const last = candles[candles.length - 1];
+  const previous = candles[candles.length - 2];
+
+  const body = Math.abs(last.close - last.open);
+  const range = last.high - last.low;
+  const upperWick = last.high - Math.max(last.open, last.close);
+  const lowerWick = Math.min(last.open, last.close) - last.low;
+
+  if (range <= 0) return "Sem padrão confirmado";
+
+  if (
+    last.close > last.open &&
+    previous.close < previous.open &&
+    last.close > previous.open &&
+    last.open < previous.close
+  ) return "Bullish Engulfing";
+
+  if (
+    last.close < last.open &&
+    previous.close > previous.open &&
+    last.close < previous.open &&
+    last.open > previous.close
+  ) return "Bearish Engulfing";
+
+  if (lowerWick > body * 2 && upperWick < body && body / range < 0.4) {
+    return "Hammer";
+  }
+
+  if (upperWick > body * 2 && lowerWick < body && body / range < 0.4) {
+    return "Shooting Star";
+  }
+
+  if (body / range < 0.1) return "Doji";
+
+  return "Sem padrão confirmado";
 }
 
-function getIntervalMinutes(timeframe) {
-  const map = {
-    M1: 1,
-    M5: 5,
-    M15: 15,
-    M30: 30,
-    H1: 60,
-    H4: 240
+function marketStructure(candles) {
+  const points = candles.slice(-80);
+  const highs = [];
+  const lows = [];
+
+  for (let i = 2; i < points.length - 2; i++) {
+    const c = points[i];
+
+    if (
+      c.high > points[i - 1].high &&
+      c.high > points[i - 2].high &&
+      c.high > points[i + 1].high &&
+      c.high > points[i + 2].high
+    ) highs.push({ index: i, price: c.high });
+
+    if (
+      c.low < points[i - 1].low &&
+      c.low < points[i - 2].low &&
+      c.low < points[i + 1].low &&
+      c.low < points[i + 2].low
+    ) lows.push({ index: i, price: c.low });
+  }
+
+  const last = points[points.length - 1];
+  const previousHigh = highs.length ? highs[highs.length - 1].price : null;
+  const previousLow = lows.length ? lows[lows.length - 1].price : null;
+
+  let structure = "RANGE";
+  let event = "Nenhum rompimento confirmado";
+
+  if (previousHigh !== null && last.close > previousHigh) {
+    structure = "BULLISH";
+    event = "BOS de alta";
+  } else if (previousLow !== null && last.close < previousLow) {
+    structure = "BEARISH";
+    event = "BOS de baixa";
+  }
+
+  return {
+    trend: structure,
+    event,
+    lastSwingHigh: previousHigh,
+    lastSwingLow: previousLow
+  };
+}
+
+function supportResistance(candles) {
+  const recent = candles.slice(-50);
+
+  return {
+    support: Math.min(...recent.map(c => c.low)),
+    resistance: Math.max(...recent.map(c => c.high))
+  };
+}
+
+function getAgeMinutes(timestamp) {
+  const date = new Date(timestamp.replace(" ", "T") + "Z");
+  return (Date.now() - date.getTime()) / 60000;
+}
+
+function getFreshness(timeframe, age) {
+  const limits = {
+    M1: 5,
+    M5: 12,
+    M15: 35,
+    M30: 65,
+    H1: 130,
+    H4: 500,
+    D1: 1800
   };
 
-  return map[timeframe];
+  return {
+    ageMinutes: Number(age.toFixed(2)),
+    fresh: Number.isFinite(age) && age >= -2 && age <= limits[timeframe]
+  };
 }
 
-async function getCandles(symbol, timeframe, outputsize = 250) {
-  if (!API_KEY) {
-    throw new Error("API_KEY_NOT_CONFIGURED");
+async function getCandles(symbol, timeframe) {
+  if (!API_KEY) throw new Error("API KEY não configurada.");
+
+  const providerSymbol = SYMBOLS[symbol];
+  if (!providerSymbol) throw new Error("Ativo ainda não configurado.");
+
+  const key = `${symbol}_${timeframe}`;
+  const cached = cache.get(key);
+
+  if (cached && Date.now() - cached.time < CACHE_TIME) {
+    return cached.candles;
   }
 
   const interval = INTERVALS[timeframe];
-
-  if (!interval) {
-    throw new Error("INVALID_TIMEFRAME");
-  }
+  if (!interval) throw new Error("Timeframe inválido.");
 
   const url = new URL("https://api.twelvedata.com/time_series");
 
-  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("symbol", providerSymbol);
   url.searchParams.set("interval", interval);
-  url.searchParams.set("outputsize", String(outputsize));
-  url.searchParams.set("apikey", API_KEY);
-  url.searchParams.set("format", "JSON");
+  url.searchParams.set("outputsize", "250");
   url.searchParams.set("timezone", "UTC");
+  url.searchParams.set("apikey", API_KEY);
 
-  const response = await fetch(url);
+  const data = await requestJSON(url.toString());
 
-  if (!response.ok) {
-    throw new Error("DATA_PROVIDER_HTTP_ERROR");
+  if (!data.values || !Array.isArray(data.values)) {
+    throw new Error(data.message || "Não foram recebidas velas.");
   }
 
-  const data = await response.json();
+  const candles = data.values.map(item => ({
+    time: item.datetime,
+    open: Number(item.open),
+    high: Number(item.high),
+    low: Number(item.low),
+    close: Number(item.close),
+    volume: item.volume == null ? null : Number(item.volume)
+  })).filter(c =>
+    c.time &&
+    [c.open, c.high, c.low, c.close].every(Number.isFinite) &&
+    c.high >= c.low &&
+    c.high >= Math.max(c.open, c.close) &&
+    c.low <= Math.min(c.open, c.close)
+  ).reverse();
 
-  if (data.status === "error" || !Array.isArray(data.values)) {
-    const error = new Error("DATA_PROVIDER_ERROR");
-    error.providerMessage = data.message || "Dados indisponíveis";
-    throw error;
+  if (candles.length < 205) {
+    throw new Error("Dados insuficientes para análise de tendência longa.");
   }
 
-  const candles = data.values
-    .map(item => ({
-      datetime: item.datetime,
-      open: Number(item.open),
-      high: Number(item.high),
-      low: Number(item.low),
-      close: Number(item.close),
-      volume: item.volume ? Number(item.volume) : null
-    }))
-    .filter(c =>
-      Number.isFinite(c.open) &&
-      Number.isFinite(c.high) &&
-      Number.isFinite(c.low) &&
-      Number.isFinite(c.close) &&
-      c.high >= c.low
-    )
-    .reverse();
-
-  if (candles.length < 60) {
-    throw new Error("INSUFFICIENT_CANDLES");
+  for (let i = 1; i < candles.length; i++) {
+    if (new Date(candles[i].time) <= new Date(candles[i - 1].time)) {
+      throw new Error("Sequência de velas inválida.");
+    }
   }
+
+  cache.set(key, { time: Date.now(), candles });
 
   return candles;
 }
 
-function checkFreshness(candles, timeframe) {
-  const latest = candles[candles.length - 1];
-
-  const timestamp = Date.parse(
-    latest.datetime.replace(" ", "T") + "Z"
-  );
-
-  if (!Number.isFinite(timestamp)) {
-    return {
-      fresh: false,
-      ageMinutes: null
-    };
-  }
-
-  const ageMinutes = (Date.now() - timestamp) / 60000;
-  const allowedAge = getIntervalMinutes(timeframe) * 3 + 5;
-
-  return {
-    fresh: ageMinutes >= -2 && ageMinutes <= allowedAge,
-    ageMinutes: Math.max(0, ageMinutes)
-  };
-}
-
 function analyzeCandles(candles, symbol, timeframe) {
   const closes = candles.map(c => c.close);
-
-  const last = closes[closes.length - 1];
+  const last = candles[candles.length - 1];
 
   const ema9 = ema(closes, 9);
   const ema21 = ema(closes, 21);
   const ema50 = ema(closes, 50);
   const ema200 = ema(closes, 200);
-
   const rsiValue = rsi(closes);
-  const macdValue = macd(closes);
   const atrValue = atr(candles);
+  const macd = calculateMACD(closes);
+  const structure = marketStructure(candles);
+  const levels = supportResistance(candles);
+  const pattern = candlePattern(candles);
 
-  if (
-    ema9 === null ||
-    ema21 === null ||
-    ema50 === null ||
-    ema200 === null ||
-    rsiValue === null ||
-    macdValue === null ||
-    atrValue === null
-  ) {
-    throw new Error("INDICATORS_NOT_READY");
-  }
+  const age = getAgeMinutes(last.time);
+  const freshness = getFreshness(timeframe, age);
+
+  const repeated = candles.slice(-20).filter((c, i, arr) =>
+    i > 0 && c.open === arr[i - 1].open &&
+    c.high === arr[i - 1].high &&
+    c.low === arr[i - 1].low &&
+    c.close === arr[i - 1].close
+  ).length;
+
+  const quality = {
+    candleCount: candles.length,
+    repeatedCandles: repeated,
+    freshness,
+    valid: freshness.fresh && repeated < 8
+  };
 
   let score = 0;
   const reasons = [];
@@ -241,7 +370,7 @@ function analyzeCandles(candles, symbol, timeframe) {
     reasons.push("Tendência intermédia negativa");
   }
 
-  if (last > ema200) {
+  if (last.close > ema200) {
     score++;
     reasons.push("Preço acima da EMA 200");
   } else {
@@ -252,71 +381,113 @@ function analyzeCandles(candles, symbol, timeframe) {
   if (rsiValue >= 50 && rsiValue < 70) {
     score++;
     reasons.push("RSI favorece compradores");
-  } else if (rsiValue < 50 && rsiValue > 30) {
+  } else if (rsiValue <= 50 && rsiValue > 30) {
     score--;
     reasons.push("RSI favorece vendedores");
   } else {
-    reasons.push("RSI em zona extrema ou sem confirmação");
+    reasons.push("RSI em zona extrema ou neutra");
   }
 
-  if (macdValue > 0) {
+  if (macd.histogram > 0) {
     score++;
-    reasons.push("MACD positivo");
-  } else {
+    reasons.push("Histograma MACD positivo");
+  } else if (macd.histogram < 0) {
     score--;
-    reasons.push("MACD negativo");
+    reasons.push("Histograma MACD negativo");
+  }
+
+  if (structure.trend === "BULLISH") {
+    score++;
+    reasons.push("Estrutura de mercado bullish");
+  } else if (structure.trend === "BEARISH") {
+    score--;
+    reasons.push("Estrutura de mercado bearish");
+  }
+
+  if (pattern === "Bullish Engulfing" || pattern === "Hammer") {
+    score++;
+    reasons.push("Padrão de vela comprador: " + pattern);
+  }
+
+  if (pattern === "Bearish Engulfing" || pattern === "Shooting Star") {
+    score--;
+    reasons.push("Padrão de vela vendedor: " + pattern);
   }
 
   let signal = "WAIT";
 
-  if (score >= 4 && rsiValue < 70) {
+  if (
+    quality.valid &&
+    score >= 4 &&
+    rsiValue < 70 &&
+    structure.trend !== "BEARISH"
+  ) {
     signal = "BUY";
-  } else if (score <= -4 && rsiValue > 30) {
+  } else if (
+    quality.valid &&
+    score <= -4 &&
+    rsiValue > 30 &&
+    structure.trend !== "BULLISH"
+  ) {
     signal = "SELL";
   }
 
-  const direction = signal === "BUY" ? 1 : -1;
-  const entry = last;
-
-  let sl = null;
+  let entry = null;
+  let stopLoss = null;
   let tp1 = null;
   let tp2 = null;
   let tp3 = null;
 
-  if (signal !== "WAIT") {
-    sl = entry - direction * atrValue * 1.5;
-    tp1 = entry + direction * atrValue * 1.5;
-    tp2 = entry + direction * atrValue * 2.5;
-    tp3 = entry + direction * atrValue * 3.5;
+  if (signal !== "WAIT" && atrValue > 0) {
+    entry = last.close;
+
+    if (signal === "BUY") {
+      stopLoss = entry - atrValue * 1.5;
+      tp1 = entry + atrValue * 1.5;
+      tp2 = entry + atrValue * 2.5;
+      tp3 = entry + atrValue * 3.5;
+    } else {
+      stopLoss = entry + atrValue * 1.5;
+      tp1 = entry - atrValue * 1.5;
+      tp2 = entry - atrValue * 2.5;
+      tp3 = entry - atrValue * 3.5;
+    }
   }
 
-  const pipSize = getPipSize(symbol);
+  if (!quality.valid) {
+    signal = "WAIT";
+    reasons.push("Dados insuficientes, repetidos ou desatualizados.");
+  }
 
   return {
+    status: "success",
+    application: "SBC-ULTIMATE",
+    provider: "Twelve Data",
     symbol,
+    providerSymbol: SYMBOLS[symbol],
     timeframe,
     signal,
     score,
-    price: last,
+    price: last.close,
     entry,
-    stopLoss: sl,
-    takeProfit1: tp1,
-    takeProfit2: tp2,
-    takeProfit3: tp3,
+    stopLoss,
+    takeProfit: { tp1, tp2, tp3 },
     indicators: {
       ema9,
       ema21,
       ema50,
       ema200,
       rsi: rsiValue,
-      macd: macdValue,
+      macd,
       atr: atrValue
     },
-    pipSize,
+    marketStructure: structure,
+    supportResistance: levels,
+    candlePattern: pattern,
+    dataQuality: quality,
+    candleTime: last.time,
     reasons,
-    candleCount: candles.length,
-    candleTime: candles[candles.length - 1].datetime,
-    warning: "Análise técnica experimental. Não garante resultados."
+    warning: "Dados externos. Não representam uma ligação direta ao gráfico MT5 da Exness."
   };
 }
 
@@ -324,164 +495,60 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "online",
     application: "SBC-ULTIMATE",
-    engine: "technical-analysis-v2",
+    engine: "technical-analysis-v3",
     provider: "Twelve Data",
     apiConfigured: Boolean(API_KEY),
-    marketData: API_KEY ? "configured" : "not_connected"
+    marketData: API_KEY ? "configured" : "not configured"
   });
 });
 
 app.get("/api/market", async (req, res) => {
   try {
-    const symbolInput = String(req.query.symbol || "EURUSD").toUpperCase();
+    const symbol = String(req.query.symbol || "EURUSD").toUpperCase();
     const timeframe = String(req.query.timeframe || "M15").toUpperCase();
 
-    const symbol = SYMBOLS[symbolInput];
-
-    if (!symbol) {
-      return res.status(400).json({
-        error: "Símbolo não suportado nesta fase."
-      });
-    }
-
-    if (!INTERVALS[timeframe]) {
-      return res.status(400).json({
-        error: "Timeframe inválido."
-      });
-    }
-
     const candles = await getCandles(symbol, timeframe);
-    const freshness = checkFreshness(candles, timeframe);
-
-    if (!freshness.fresh) {
-      return res.status(503).json({
-        status: "stale_data",
-        symbol,
-        timeframe,
-        freshness,
-        message: "Dados possivelmente desatualizados. Sinais bloqueados."
-      });
-    }
+    const last = candles[candles.length - 1];
+    const age = getAgeMinutes(last.time);
 
     res.json({
       status: "success",
-      symbol,
+      symbol: SYMBOLS[symbol],
       timeframe,
-      freshness,
+      price: last.close,
+      candleTime: last.time,
+      freshness: getFreshness(timeframe, age),
       candles
     });
-
   } catch (error) {
-    res.status(502).json({
-      status: "error",
-      message: error.message,
-      providerMessage: error.providerMessage || null
-    });
+    res.status(400).json({ status: "error", message: error.message });
   }
 });
 
 app.get("/api/analyze", async (req, res) => {
   try {
-    const symbolInput = String(req.query.symbol || "EURUSD").toUpperCase();
+    const symbol = String(req.query.symbol || "EURUSD").toUpperCase();
     const timeframe = String(req.query.timeframe || "M15").toUpperCase();
 
-    const symbol = SYMBOLS[symbolInput];
-
-    if (!symbol) {
-      return res.status(400).json({
-        error: "Símbolo não suportado."
-      });
-    }
-
-    if (!INTERVALS[timeframe]) {
-      return res.status(400).json({
-        error: "Timeframe inválido."
-      });
-    }
-
     const candles = await getCandles(symbol, timeframe);
-    const freshness = checkFreshness(candles, timeframe);
-
-    if (!freshness.fresh) {
-      return res.status(503).json({
-        status: "stale_data",
-        message: "Dados desatualizados. Nenhum sinal emitido.",
-        freshness
-      });
-    }
-
-    const analysis = analyzeCandles(candles, symbol, timeframe);
-
-    res.json({
-      status: "success",
-      dataSource: "Twelve Data",
-      freshness,
-      analysis
-    });
-
+    res.json(analyzeCandles(candles, symbol, timeframe));
   } catch (error) {
-    res.status(502).json({
-      status: "error",
-      message: error.message,
-      providerMessage: error.providerMessage || null
-    });
+    res.status(400).json({ status: "error", message: error.message });
   }
 });
 
-app.post("/api/analyze", (req, res) => {
+app.post("/api/analyze", async (req, res) => {
   try {
-    const { symbol, timeframe, candles } = req.body;
+    const symbol = String(req.body.symbol || "EURUSD").toUpperCase();
+    const timeframe = String(req.body.timeframe || "M15").toUpperCase();
 
-    if (
-      !symbol ||
-      !INTERVALS[timeframe] ||
-      !Array.isArray(candles) ||
-      candles.length < 200
-    ) {
-      return res.status(400).json({
-        error: "São necessárias pelo menos 200 velas válidas."
-      });
-    }
-
-    const validCandles = candles.map(c => ({
-      datetime: c.datetime || null,
-      open: Number(c.open),
-      high: Number(c.high),
-      low: Number(c.low),
-      close: Number(c.close)
-    }));
-
-    if (validCandles.some(c =>
-      !Number.isFinite(c.open) ||
-      !Number.isFinite(c.high) ||
-      !Number.isFinite(c.low) ||
-      !Number.isFinite(c.close) ||
-      c.high < c.low
-    )) {
-      return res.status(400).json({
-        error: "Velas inválidas."
-      });
-    }
-
-    const result = analyzeCandles(
-      validCandles,
-      String(symbol).toUpperCase(),
-      timeframe
-    );
-
-    res.json({
-      status: "success",
-      analysis: result
-    });
-
+    const candles = await getCandles(symbol, timeframe);
+    res.json(analyzeCandles(candles, symbol, timeframe));
   } catch (error) {
-    res.status(500).json({
-      status: "error",
-      message: error.message
-    });
+    res.status(400).json({ status: "error", message: error.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`SBC-ULTIMATE ativo na porta ${PORT}`);
+  console.log("SBC-ULTIMATE online na porta " + PORT);
 });
