@@ -4,20 +4,37 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-const TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
+const API_KEY = process.env.TWELVE_DATA_API;
+
+const INTERVALS = {
+  M1: "1min",
+  M5: "5min",
+  M15: "15min",
+  M30: "30min",
+  H1: "1h",
+  H4: "4h"
+};
+
+const SYMBOLS = {
+  EURUSD: "EUR/USD",
+  "EUR/USD": "EUR/USD",
+  XAUUSD: "XAU/USD",
+  "XAU/USD": "XAU/USD"
+};
 
 function ema(values, period) {
   if (values.length < period) return null;
 
-  const k = 2 / (period + 1);
-  let result = values.slice(0, period)
+  const multiplier = 2 / (period + 1);
+  let result = values
+    .slice(0, period)
     .reduce((a, b) => a + b, 0) / period;
 
   for (let i = period; i < values.length; i++) {
-    result = values[i] * k + result * (1 - k);
+    result = (values[i] - result) * multiplier + result;
   }
 
   return result;
@@ -29,29 +46,20 @@ function rsi(values, period = 14) {
   let gains = 0;
   let losses = 0;
 
-  for (let i = 1; i <= period; i++) {
+  for (let i = values.length - period; i < values.length; i++) {
     const change = values[i] - values[i - 1];
 
     if (change > 0) gains += change;
     else losses -= change;
   }
 
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
+  const averageGain = gains / period;
+  const averageLoss = losses / period;
 
-  for (let i = period + 1; i < values.length; i++) {
-    const change = values[i] - values[i - 1];
+  if (averageLoss === 0) return 100;
 
-    avgGain = (avgGain * (period - 1) +
-      Math.max(change, 0)) / period;
-
-    avgLoss = (avgLoss * (period - 1) +
-      Math.max(-change, 0)) / period;
-  }
-
-  if (avgLoss === 0) return 100;
-
-  return 100 - 100 / (1 + avgGain / avgLoss);
+  const rs = averageGain / averageLoss;
+  return 100 - 100 / (1 + rs);
 }
 
 function atr(candles, period = 14) {
@@ -63,262 +71,252 @@ function atr(candles, period = 14) {
     const current = candles[i];
     const previous = candles[i - 1];
 
-    ranges.push(Math.max(
-      current.high - current.low,
-      Math.abs(current.high - previous.close),
-      Math.abs(current.low - previous.close)
-    ));
+    ranges.push(
+      Math.max(
+        current.high - current.low,
+        Math.abs(current.high - previous.close),
+        Math.abs(current.low - previous.close)
+      )
+    );
   }
 
-  return ranges.slice(-period)
-    .reduce((a, b) => a + b, 0) / period;
+  const recent = ranges.slice(-period);
+  return recent.reduce((a, b) => a + b, 0) / recent.length;
 }
 
-function round(value, digits = 5) {
-  return Number(value.toFixed(digits));
+function macd(values) {
+  if (values.length < 35) return null;
+
+  const fast = ema(values, 12);
+  const slow = ema(values, 26);
+
+  if (fast === null || slow === null) return null;
+
+  return fast - slow;
 }
 
-function analyze({ symbol, timeframe, candles, pipSize }) {
+function getPipSize(symbol) {
+  if (symbol.includes("XAU")) return 0.01;
+  if (symbol.includes("JPY")) return 0.01;
+  return 0.0001;
+}
 
-  if (!Array.isArray(candles) || candles.length < 60) {
-    throw new Error("São necessárias pelo menos 60 velas.");
+function getIntervalMinutes(timeframe) {
+  const map = {
+    M1: 1,
+    M5: 5,
+    M15: 15,
+    M30: 30,
+    H1: 60,
+    H4: 240
+  };
+
+  return map[timeframe];
+}
+
+async function getCandles(symbol, timeframe, outputsize = 250) {
+  if (!API_KEY) {
+    throw new Error("API_KEY_NOT_CONFIGURED");
   }
 
-  const data = candles.map(c => ({
-    open: Number(c.open),
-    high: Number(c.high),
-    low: Number(c.low),
-    close: Number(c.close)
-  }));
+  const interval = INTERVALS[timeframe];
 
-  for (const c of data) {
-    if (
-      !Number.isFinite(c.open) ||
-      !Number.isFinite(c.high) ||
-      !Number.isFinite(c.low) ||
-      !Number.isFinite(c.close) ||
-      c.high < c.low
-    ) {
-      throw new Error("Dados das velas inválidos.");
-    }
+  if (!interval) {
+    throw new Error("INVALID_TIMEFRAME");
   }
 
-  const closes = data.map(c => c.close);
-  const price = closes[closes.length - 1];
+  const url = new URL("https://api.twelvedata.com/time_series");
+
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("interval", interval);
+  url.searchParams.set("outputsize", String(outputsize));
+  url.searchParams.set("apikey", API_KEY);
+  url.searchParams.set("format", "JSON");
+  url.searchParams.set("timezone", "UTC");
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error("DATA_PROVIDER_HTTP_ERROR");
+  }
+
+  const data = await response.json();
+
+  if (data.status === "error" || !Array.isArray(data.values)) {
+    const error = new Error("DATA_PROVIDER_ERROR");
+    error.providerMessage = data.message || "Dados indisponíveis";
+    throw error;
+  }
+
+  const candles = data.values
+    .map(item => ({
+      datetime: item.datetime,
+      open: Number(item.open),
+      high: Number(item.high),
+      low: Number(item.low),
+      close: Number(item.close),
+      volume: item.volume ? Number(item.volume) : null
+    }))
+    .filter(c =>
+      Number.isFinite(c.open) &&
+      Number.isFinite(c.high) &&
+      Number.isFinite(c.low) &&
+      Number.isFinite(c.close) &&
+      c.high >= c.low
+    )
+    .reverse();
+
+  if (candles.length < 60) {
+    throw new Error("INSUFFICIENT_CANDLES");
+  }
+
+  return candles;
+}
+
+function checkFreshness(candles, timeframe) {
+  const latest = candles[candles.length - 1];
+
+  const timestamp = Date.parse(
+    latest.datetime.replace(" ", "T") + "Z"
+  );
+
+  if (!Number.isFinite(timestamp)) {
+    return {
+      fresh: false,
+      ageMinutes: null
+    };
+  }
+
+  const ageMinutes = (Date.now() - timestamp) / 60000;
+  const allowedAge = getIntervalMinutes(timeframe) * 3 + 5;
+
+  return {
+    fresh: ageMinutes >= -2 && ageMinutes <= allowedAge,
+    ageMinutes: Math.max(0, ageMinutes)
+  };
+}
+
+function analyzeCandles(candles, symbol, timeframe) {
+  const closes = candles.map(c => c.close);
+
+  const last = closes[closes.length - 1];
 
   const ema9 = ema(closes, 9);
   const ema21 = ema(closes, 21);
   const ema50 = ema(closes, 50);
   const ema200 = ema(closes, 200);
 
-  const rsi14 = rsi(closes);
-  const atr14 = atr(data);
-
-  const macdValues = [];
-
-  for (let i = 25; i < closes.length; i++) {
-    const sample = closes.slice(0, i + 1);
-
-    macdValues.push(
-      ema(sample, 12) - ema(sample, 26)
-    );
-  }
-
-  const macd = macdValues[macdValues.length - 1];
-
-  const macdSignal = macdValues.length >= 9
-    ? ema(macdValues, 9)
-    : null;
-
-  const bullish = [];
-  const bearish = [];
-
-  if (ema9 > ema21) bullish.push("EMA 9 acima da EMA 21");
-  else bearish.push("EMA 9 abaixo da EMA 21");
-
-  if (ema21 > ema50) bullish.push("EMA 21 acima da EMA 50");
-  else bearish.push("EMA 21 abaixo da EMA 50");
-
-  if (price > ema50) bullish.push("Preço acima da EMA 50");
-  else bearish.push("Preço abaixo da EMA 50");
-
-  if (rsi14 >= 52 && rsi14 <= 70) {
-    bullish.push("RSI favorece compradores");
-  }
-
-  if (rsi14 <= 48 && rsi14 >= 30) {
-    bearish.push("RSI favorece vendedores");
-  }
-
-  if (macdSignal !== null && macd > macdSignal) {
-    bullish.push("MACD positivo");
-  }
-
-  if (macdSignal !== null && macd < macdSignal) {
-    bearish.push("MACD negativo");
-  }
-
-  let direction = "WAIT";
-  let score = 45;
-  let reasons = [
-    "Confluência insuficiente. Aguardar confirmação."
-  ];
+  const rsiValue = rsi(closes);
+  const macdValue = macd(closes);
+  const atrValue = atr(candles);
 
   if (
-    bullish.length >= 4 &&
-    bullish.length > bearish.length &&
-    rsi14 < 75
+    ema9 === null ||
+    ema21 === null ||
+    ema50 === null ||
+    ema200 === null ||
+    rsiValue === null ||
+    macdValue === null ||
+    atrValue === null
   ) {
-    direction = "BUY";
-    score = Math.min(
-      95,
-      55 + bullish.length * 8 - bearish.length * 4
-    );
+    throw new Error("INDICATORS_NOT_READY");
+  }
 
-    reasons = bullish;
+  let score = 0;
+  const reasons = [];
 
-  } else if (
-    bearish.length >= 4 &&
-    bearish.length > bullish.length &&
-    rsi14 > 25
-  ) {
-    direction = "SELL";
-    score = Math.min(
-      95,
-      55 + bearish.length * 8 - bullish.length * 4
-    );
-
-    reasons = bearish;
+  if (ema9 > ema21) {
+    score++;
+    reasons.push("EMA 9 acima da EMA 21");
   } else {
-    reasons = reasons.concat(
-      bullish.length >= bearish.length
-        ? bullish
-        : bearish
-    );
+    score--;
+    reasons.push("EMA 9 abaixo da EMA 21");
   }
 
-  const pip = Number(pipSize) > 0
-    ? Number(pipSize)
-    : (/JPY/i.test(symbol) ? 0.01 : 0.0001);
-
-  const digits = pip >= 0.1 ? 2 : pip >= 0.001 ? 3 : 5;
-
-  let entry = null;
-  let stopLoss = null;
-  let targets = [null, null, null];
-  let riskPips = null;
-
-  if (direction !== "WAIT" && atr14 > 0) {
-
-    entry = price;
-
-    const distance = Math.max(
-      atr14 * 1.5,
-      pip * 5
-    );
-
-    if (direction === "BUY") {
-      stopLoss = entry - distance;
-
-      targets = [
-        entry + distance,
-        entry + distance * 2,
-        entry + distance * 3
-      ];
-
-    } else {
-      stopLoss = entry + distance;
-
-      targets = [
-        entry - distance,
-        entry - distance * 2,
-        entry - distance * 3
-      ];
-    }
-
-    riskPips = Math.abs(entry - stopLoss) / pip;
+  if (ema21 > ema50) {
+    score++;
+    reasons.push("Tendência intermédia positiva");
+  } else {
+    score--;
+    reasons.push("Tendência intermédia negativa");
   }
 
-  const recent = data.slice(-20);
+  if (last > ema200) {
+    score++;
+    reasons.push("Preço acima da EMA 200");
+  } else {
+    score--;
+    reasons.push("Preço abaixo da EMA 200");
+  }
 
-  const recentHigh = Math.max(
-    ...recent.map(c => c.high)
-  );
+  if (rsiValue >= 50 && rsiValue < 70) {
+    score++;
+    reasons.push("RSI favorece compradores");
+  } else if (rsiValue < 50 && rsiValue > 30) {
+    score--;
+    reasons.push("RSI favorece vendedores");
+  } else {
+    reasons.push("RSI em zona extrema ou sem confirmação");
+  }
 
-  const recentLow = Math.min(
-    ...recent.map(c => c.low)
-  );
+  if (macdValue > 0) {
+    score++;
+    reasons.push("MACD positivo");
+  } else {
+    score--;
+    reasons.push("MACD negativo");
+  }
+
+  let signal = "WAIT";
+
+  if (score >= 4 && rsiValue < 70) {
+    signal = "BUY";
+  } else if (score <= -4 && rsiValue > 30) {
+    signal = "SELL";
+  }
+
+  const direction = signal === "BUY" ? 1 : -1;
+  const entry = last;
+
+  let sl = null;
+  let tp1 = null;
+  let tp2 = null;
+  let tp3 = null;
+
+  if (signal !== "WAIT") {
+    sl = entry - direction * atrValue * 1.5;
+    tp1 = entry + direction * atrValue * 1.5;
+    tp2 = entry + direction * atrValue * 2.5;
+    tp3 = entry + direction * atrValue * 3.5;
+  }
+
+  const pipSize = getPipSize(symbol);
 
   return {
-
     symbol,
     timeframe,
-    direction,
-
-    quality: score >= 80
-      ? "FORTE"
-      : score >= 65
-        ? "NORMAL"
-        : "FRACA",
-
+    signal,
     score,
-
-    price: round(price, digits),
-
-    entry: entry === null
-      ? null
-      : round(entry, digits),
-
-    stopLoss: stopLoss === null
-      ? null
-      : round(stopLoss, digits),
-
-    takeProfits: {
-      tp1: targets[0] === null ? null : round(targets[0], digits),
-      tp2: targets[1] === null ? null : round(targets[1], digits),
-      tp3: targets[2] === null ? null : round(targets[2], digits)
-    },
-
-    riskPips: riskPips === null
-      ? null
-      : round(riskPips, 1),
-
-    rewardPips: riskPips === null
-      ? null
-      : {
-          tp1: round(riskPips, 1),
-          tp2: round(riskPips * 2, 1),
-          tp3: round(riskPips * 3, 1)
-        },
-
+    price: last,
+    entry,
+    stopLoss: sl,
+    takeProfit1: tp1,
+    takeProfit2: tp2,
+    takeProfit3: tp3,
     indicators: {
-      ema9: round(ema9, digits),
-      ema21: round(ema21, digits),
-      ema50: round(ema50, digits),
-
-      ema200: ema200 === null
-        ? null
-        : round(ema200, digits),
-
-      rsi14: round(rsi14, 2),
-      macd: round(macd, digits),
-
-      macdSignal: macdSignal === null
-        ? null
-        : round(macdSignal, digits),
-
-      atr14: round(atr14, digits)
+      ema9,
+      ema21,
+      ema50,
+      ema200,
+      rsi: rsiValue,
+      macd: macdValue,
+      atr: atrValue
     },
-
-    marketStructure: {
-      recentHigh: round(recentHigh, digits),
-      recentLow: round(recentLow, digits)
-    },
-
+    pipSize,
     reasons,
-
-    warning:
-      "Análise técnica experimental. Não garante lucro. Confirmar spread, execução e risco antes de operar."
+    candleCount: candles.length,
+    candleTime: candles[candles.length - 1].datetime,
+    warning: "Análise técnica experimental. Não garante resultados."
   };
 }
 
@@ -326,59 +324,164 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "online",
     application: "SBC-ULTIMATE",
-    engine: "technical-analysis-v1",
-    marketData: "not_connected",
-    message:
-      "Motor online. Falta ligar uma fonte real de velas do MT5."
+    engine: "technical-analysis-v2",
+    provider: "Twelve Data",
+    apiConfigured: Boolean(API_KEY),
+    marketData: API_KEY ? "configured" : "not_connected"
   });
 });
 
-app.post("/api/analyze", (req, res) => {
-
+app.get("/api/market", async (req, res) => {
   try {
-    const {
-      symbol,
-      timeframe,
-      candles,
-      pipSize
-    } = req.body || {};
+    const symbolInput = String(req.query.symbol || "EURUSD").toUpperCase();
+    const timeframe = String(req.query.timeframe || "M15").toUpperCase();
 
-    if (!symbol || typeof symbol !== "string") {
-      throw new Error(
-        "Indica um símbolo, por exemplo EURUSDm ou XAUUSDm."
-      );
+    const symbol = SYMBOLS[symbolInput];
+
+    if (!symbol) {
+      return res.status(400).json({
+        error: "Símbolo não suportado nesta fase."
+      });
     }
 
-    if (!TIMEFRAMES.includes(timeframe)) {
-      throw new Error(
-        "Timeframe inválido."
-      );
+    if (!INTERVALS[timeframe]) {
+      return res.status(400).json({
+        error: "Timeframe inválido."
+      });
     }
 
-    const result = analyze({
+    const candles = await getCandles(symbol, timeframe);
+    const freshness = checkFreshness(candles, timeframe);
+
+    if (!freshness.fresh) {
+      return res.status(503).json({
+        status: "stale_data",
+        symbol,
+        timeframe,
+        freshness,
+        message: "Dados possivelmente desatualizados. Sinais bloqueados."
+      });
+    }
+
+    res.json({
+      status: "success",
       symbol,
       timeframe,
-      candles,
-      pipSize
+      freshness,
+      candles
     });
 
-    res.json(result);
-
   } catch (error) {
-    res.status(400).json({
-      error: error.message
+    res.status(502).json({
+      status: "error",
+      message: error.message,
+      providerMessage: error.providerMessage || null
     });
   }
 });
 
-app.get("*", (req, res) => {
-  res.sendFile(
-    path.join(__dirname, "public", "index.html")
-  );
+app.get("/api/analyze", async (req, res) => {
+  try {
+    const symbolInput = String(req.query.symbol || "EURUSD").toUpperCase();
+    const timeframe = String(req.query.timeframe || "M15").toUpperCase();
+
+    const symbol = SYMBOLS[symbolInput];
+
+    if (!symbol) {
+      return res.status(400).json({
+        error: "Símbolo não suportado."
+      });
+    }
+
+    if (!INTERVALS[timeframe]) {
+      return res.status(400).json({
+        error: "Timeframe inválido."
+      });
+    }
+
+    const candles = await getCandles(symbol, timeframe);
+    const freshness = checkFreshness(candles, timeframe);
+
+    if (!freshness.fresh) {
+      return res.status(503).json({
+        status: "stale_data",
+        message: "Dados desatualizados. Nenhum sinal emitido.",
+        freshness
+      });
+    }
+
+    const analysis = analyzeCandles(candles, symbol, timeframe);
+
+    res.json({
+      status: "success",
+      dataSource: "Twelve Data",
+      freshness,
+      analysis
+    });
+
+  } catch (error) {
+    res.status(502).json({
+      status: "error",
+      message: error.message,
+      providerMessage: error.providerMessage || null
+    });
+  }
+});
+
+app.post("/api/analyze", (req, res) => {
+  try {
+    const { symbol, timeframe, candles } = req.body;
+
+    if (
+      !symbol ||
+      !INTERVALS[timeframe] ||
+      !Array.isArray(candles) ||
+      candles.length < 200
+    ) {
+      return res.status(400).json({
+        error: "São necessárias pelo menos 200 velas válidas."
+      });
+    }
+
+    const validCandles = candles.map(c => ({
+      datetime: c.datetime || null,
+      open: Number(c.open),
+      high: Number(c.high),
+      low: Number(c.low),
+      close: Number(c.close)
+    }));
+
+    if (validCandles.some(c =>
+      !Number.isFinite(c.open) ||
+      !Number.isFinite(c.high) ||
+      !Number.isFinite(c.low) ||
+      !Number.isFinite(c.close) ||
+      c.high < c.low
+    )) {
+      return res.status(400).json({
+        error: "Velas inválidas."
+      });
+    }
+
+    const result = analyzeCandles(
+      validCandles,
+      String(symbol).toUpperCase(),
+      timeframe
+    );
+
+    res.json({
+      status: "success",
+      analysis: result
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: error.message
+    });
+  }
 });
 
 app.listen(PORT, () => {
-  console.log(
-    `SBC-ULTIMATE online na porta ${PORT}`
-  );
+  console.log(`SBC-ULTIMATE ativo na porta ${PORT}`);
 });
