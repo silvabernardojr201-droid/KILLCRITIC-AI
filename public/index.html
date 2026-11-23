@@ -2,260 +2,444 @@
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#080e18">
-<title>SBC-ULTIMATE</title>
+<title>SBC-ULTIMATE V5</title>
 
 <style>
+:root{
+ --bg:#080e18;
+ --panel:#101a29;
+ --panel2:#152338;
+ --border:#263950;
+ --text:#edf4ff;
+ --muted:#8294aa;
+ --green:#20d6a0;
+ --red:#ff6074;
+ --yellow:#f4c56b;
+}
 *{box-sizing:border-box}
-body{margin:0;background:#080e18;color:#edf5ff;font-family:Arial,sans-serif}
-header{padding:18px;background:#101a29;border-bottom:1px solid #26364b}
-h1{color:#27d9a0;margin:0;font-size:23px}
-h2{color:#27d9a0;font-size:17px;margin:0 0 14px}
-small,.muted{color:#91a5bd}
-.wrap{max-width:950px;margin:auto;padding:12px}
-.card{background:#101a29;border:1px solid #26364b;border-radius:13px;padding:16px;margin:12px 0}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
-.box{background:#18283c;padding:12px;border-radius:9px}
-.box small{display:block}
-.box b{display:block;margin-top:6px;font-size:18px;overflow-wrap:anywhere}
-input,select,button{width:100%;padding:13px;margin:5px 0;border-radius:8px;border:1px solid #354b65;background:#18283c;color:white;font-size:15px}
-button{font-weight:bold;border:0;cursor:pointer}
-.start{background:#12a976}
-.stop{background:#d68b25}
-.close{background:#bd3548}
-.disabled{opacity:.45;cursor:not-allowed}
-.signal{font-size:25px;font-weight:bold}
-.buy{color:#27d9a0}
-.sell{color:#ff6475}
-.wait{color:#ffd166}
-#chart{height:350px;width:100%}
-.notice{background:#352b16;color:#ffdf9b;padding:12px;border-radius:8px;font-size:13px}
-@media(max-width:500px){.grid{grid-template-columns:1fr 1fr}}
+body{
+ margin:0;background:var(--bg);color:var(--text);
+ font-family:Arial,sans-serif;padding-bottom:85px
+}
+header{
+ padding:19px 17px;background:#0d1725;
+ border-bottom:1px solid var(--border);
+ position:sticky;top:0;z-index:5
+}
+.brand{font-size:23px;font-weight:800;color:var(--green)}
+.subtitle{font-size:10px;letter-spacing:2px;color:var(--muted);margin-top:5px}
+.wrap{max-width:850px;margin:auto;padding:13px}
+.page{display:none}
+.page.active{display:block}
+.heading{font-size:18px;font-weight:bold;margin:12px 0}
+.muted{color:var(--muted);font-size:12px}
+.card{
+ background:var(--panel);border:1px solid var(--border);
+ border-radius:15px;padding:16px;margin-bottom:13px
+}
+.card-title{
+ color:var(--muted);font-size:12px;font-weight:bold;
+ letter-spacing:1px;margin-bottom:14px
+}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.metric{
+ background:var(--panel2);border:1px solid var(--border);
+ padding:13px;border-radius:11px;min-width:0
+}
+.metric small{color:var(--muted);font-size:11px;display:block}
+.metric strong{display:block;font-size:19px;margin-top:8px;overflow-wrap:anywhere}
+.green{color:var(--green)}
+.red{color:var(--red)}
+.yellow{color:var(--yellow)}
+.pill{
+ display:inline-block;padding:6px 10px;border-radius:20px;
+ font-size:11px;background:#203044;color:var(--muted)
+}
+label{display:block;color:var(--muted);font-size:12px;margin:12px 0 6px}
+input,select{
+ width:100%;padding:13px;border-radius:9px;
+ background:var(--panel2);color:white;border:1px solid var(--border);
+ font-size:15px
+}
+button{
+ border:0;border-radius:10px;padding:13px 10px;
+ color:white;font-weight:bold;font-size:13px;cursor:pointer
+}
+button:disabled{opacity:.35;cursor:not-allowed}
+.btn-green{background:#087e60}
+.btn-red{background:#a92f45}
+.btn-yellow{background:#966c20}
+.btn-blue{background:#245b91}
+.btn-muted{background:#29384b}
+.actions{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:13px}
+.notice{
+ background:#352b18;border:1px solid #66502a;
+ color:#f2d49a;padding:12px;border-radius:10px;
+ font-size:12px;line-height:1.5
+}
+.status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--yellow)}
+.dot.online{background:var(--green)}
+#chart{height:330px;width:100%;border-radius:10px;overflow:hidden}
+.signal{
+ font-size:26px;font-weight:900;margin:8px 0 15px
+}
+.bottom{
+ position:fixed;bottom:0;left:0;right:0;z-index:10;
+ display:grid;grid-template-columns:repeat(5,1fr);
+ background:#101a29;border-top:1px solid var(--border);
+ padding:8px 3px calc(8px + env(safe-area-inset-bottom))
+}
+.nav{
+ background:transparent;color:var(--muted);
+ font-size:10px;padding:7px 1px
+}
+.nav span{display:block;font-size:19px;margin-bottom:4px}
+.nav.active{color:var(--green)}
+.trade{
+ background:var(--panel2);padding:13px;border-radius:11px;
+ border:1px solid var(--border);margin:9px 0
+}
+.row{display:flex;justify-content:space-between;gap:10px;margin:8px 0;font-size:13px}
+.empty{text-align:center;padding:28px 10px;color:var(--muted);font-size:13px}
+@media(min-width:650px){
+ .grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
 </style>
 </head>
 
 <body>
 
 <header>
-<h1>◆ SBC-ULTIMATE</h1>
-<small>UNIVERSAL MARKET ANALYSIS & AUTO TRADER</small>
+ <div class="brand">◆ SBC-ULTIMATE</div>
+ <div class="subtitle">UNIVERSAL MARKET INTELLIGENCE</div>
 </header>
 
 <main class="wrap">
 
-<section class="card">
-<h2>CONTROLO DE OPERAÇÕES</h2>
+<!-- INÍCIO -->
+<section id="home" class="page active">
+ <div class="heading">Visão geral</div>
 
-<label>Ambiente</label>
-<select id="mode">
-<option value="DEMO">DEMO</option>
-<option value="REAL">REAL</option>
-</select>
+ <div class="grid">
+  <div class="metric">
+   <small>Estado do sistema</small>
+   <strong class="yellow" id="serverStatus">A verificar</strong>
+  </div>
+  <div class="metric">
+   <small>Conexão MT5</small>
+   <strong class="red">OFFLINE</strong>
+  </div>
+  <div class="metric">
+   <small>Operações abertas</small>
+   <strong>—</strong>
+  </div>
+  <div class="metric">
+   <small>Lucro / Prejuízo</small>
+   <strong>—</strong>
+  </div>
+ </div>
 
-<label>Quantidade máxima de operações simultâneas</label>
-<input id="quantity" type="number" min="1" max="20" value="1">
+ <div class="card" style="margin-top:14px">
+  <div class="card-title">MOTOR DE NEGOCIAÇÃO</div>
+  <div class="row">
+   <span>Ambiente selecionado</span>
+   <strong id="homeMode">DEMO</strong>
+  </div>
+  <div class="row">
+   <span>Robô</span>
+   <span class="pill">AGUARDANDO LIGAÇÃO MT5</span>
+  </div>
+  <div class="notice">
+   A análise de mercado está disponível. A execução de ordens ainda não está ligada ao MT5.
+  </div>
+ </div>
 
-<label>Lote por operação</label>
-<select id="lot">
-<option value="0.01">0.01</option>
-<option value="0.02">0.02</option>
-<option value="0.05">0.05</option>
-<option value="0.10">0.10</option>
-<option value="0.20">0.20</option>
-<option value="0.50">0.50</option>
-<option value="1.00">1.00</option>
-</select>
-
-<div class="grid">
-<button class="start disabled" disabled>▶ START</button>
-<button class="stop disabled" disabled>■ STOP</button>
-</div>
-
-<button class="close disabled" disabled>CLOSE ALL</button>
-
-<p class="notice">
-Execução MT5 ainda não conectada. Os comandos de negociação
-permanecem bloqueados até configurarmos e testarmos o conector.
-</p>
-
-<div class="grid">
-<div class="box">
-<small>Quantidade escolhida</small>
-<b id="quantityDisplay">1</b>
-</div>
-<div class="box">
-<small>Lote por operação</small>
-<b id="lotDisplay">0.01</b>
-</div>
-</div>
+ <div class="card">
+  <div class="card-title">ACESSO RÁPIDO</div>
+  <div class="actions">
+   <button class="btn-green" onclick="showPage('analyst')">ANALISAR MERCADO</button>
+   <button class="btn-blue" onclick="showPage('trader')">AUTO TRADER</button>
+  </div>
+ </div>
 </section>
 
-<section class="card">
-<h2>SELEÇÃO DO MERCADO</h2>
+<!-- ANALYST -->
+<section id="analyst" class="page">
+ <div class="heading">Market Analyst</div>
 
-<label>Ativo</label>
-<select id="symbol">
-<option value="EURUSD">EURUSD</option>
-<option value="GBPUSD">GBPUSD</option>
-<option value="USDJPY">USDJPY</option>
-<option value="XAUUSD">XAUUSD - GOLD</option>
-<option value="BTCUSD">BTCUSD</option>
-</select>
+ <div class="card">
+  <div class="card-title">CONFIGURAÇÃO DA ANÁLISE</div>
 
-<label>Timeframe</label>
-<select id="timeframe">
-<option value="M1">M1</option>
-<option value="M5">M5</option>
-<option value="M15" selected>M15</option>
-<option value="M30">M30</option>
-<option value="H1">H1</option>
-<option value="H4">H4</option>
-<option value="D1">D1</option>
-</select>
+  <label>Ativo</label>
+  <select id="symbol">
+   <option value="EURUSD">EURUSD</option>
+   <option value="GBPUSD">GBPUSD</option>
+   <option value="USDJPY">USDJPY</option>
+   <option value="USDCAD">USDCAD</option>
+   <option value="XAUUSD">XAUUSD — GOLD</option>
+   <option value="BTCUSD">BTCUSD</option>
+  </select>
 
-<button class="start" id="analyze">ANALISAR MERCADO</button>
-<p class="muted" id="connection">A verificar servidor...</p>
+  <label>Timeframe</label>
+  <select id="timeframe">
+   <option>M1</option>
+   <option>M5</option>
+   <option selected>M15</option>
+   <option>M30</option>
+   <option>H1</option>
+   <option>H4</option>
+   <option>D1</option>
+  </select>
+
+  <button class="btn-green" id="analyze" style="width:100%;margin-top:15px">
+   ANALISAR MERCADO
+  </button>
+ </div>
+
+ <div class="card">
+  <div class="card-title">GRÁFICO DO MERCADO</div>
+  <div id="chart"></div>
+  <p class="muted">Gráfico externo TradingView. Os preços podem diferir dos dados da análise.</p>
+ </div>
+
+ <div class="card">
+  <div class="card-title">SINAL IDENTIFICADO</div>
+  <div id="signal" class="signal yellow">AGUARDANDO</div>
+  <div class="grid3" id="levels">
+   <div class="metric"><small>Entrada</small><strong>—</strong></div>
+   <div class="metric"><small>Stop Loss</small><strong>—</strong></div>
+   <div class="metric"><small>TP1</small><strong>—</strong></div>
+   <div class="metric"><small>TP2</small><strong>—</strong></div>
+   <div class="metric"><small>TP3</small><strong>—</strong></div>
+   <div class="metric"><small>Score</small><strong>—</strong></div>
+  </div>
+  <p class="muted" id="analysisInfo">Ainda não existe análise.</p>
+ </div>
+
+ <div class="card">
+  <div class="card-title">INDICADORES TÉCNICOS</div>
+  <div class="grid" id="indicators">
+   <div class="metric"><small>EMA 9</small><strong>—</strong></div>
+   <div class="metric"><small>EMA 21</small><strong>—</strong></div>
+   <div class="metric"><small>EMA 50</small><strong>—</strong></div>
+   <div class="metric"><small>EMA 200</small><strong>—</strong></div>
+   <div class="metric"><small>RSI</small><strong>—</strong></div>
+   <div class="metric"><small>MACD</small><strong>—</strong></div>
+   <div class="metric"><small>ATR</small><strong>—</strong></div>
+   <div class="metric"><small>ADX</small><strong>—</strong></div>
+  </div>
+ </div>
 </section>
 
-<section class="card">
-<h2>GRÁFICO</h2>
-<div id="chart"></div>
-<small>Gráfico TradingView. Pode apresentar preços diferentes dos dados usados na análise.</small>
+<!-- AUTO TRADER -->
+<section id="trader" class="page">
+ <div class="heading">Auto Trader</div>
+
+ <div class="card">
+  <div class="card-title">CONFIGURAÇÃO DO ROBÔ</div>
+
+  <label>Ambiente de negociação</label>
+  <select id="mode">
+   <option value="DEMO">DEMO</option>
+   <option value="REAL">REAL</option>
+  </select>
+
+  <label>Quantidade máxima de operações simultâneas</label>
+  <input id="quantity" type="number" min="1" max="20" value="1">
+
+  <label>Volume por operação (lote)</label>
+  <select id="lot">
+   <option>0.01</option>
+   <option>0.02</option>
+   <option>0.05</option>
+   <option>0.10</option>
+   <option>0.20</option>
+   <option>0.50</option>
+   <option>1.00</option>
+  </select>
+
+  <div class="grid" style="margin-top:14px">
+   <div class="metric">
+    <small>Limite de operações</small>
+    <strong id="quantityDisplay">1</strong>
+   </div>
+   <div class="metric">
+    <small>Lote selecionado</small>
+    <strong id="lotDisplay">0.01</strong>
+   </div>
+  </div>
+
+  <div class="actions">
+   <button class="btn-green" disabled>▶ START</button>
+   <button class="btn-yellow" disabled>■ STOP</button>
+  </div>
+  <button class="btn-red" disabled style="width:100%;margin-top:9px">CLOSE ALL</button>
+
+  <div class="notice" style="margin-top:15px">
+   Execução bloqueada: falta integrar e testar o conector MT5. A seleção de DEMO/REAL ainda não altera nenhuma conta.
+  </div>
+ </div>
+
+ <div class="card">
+  <div class="card-title">ESTADO DO ROBÔ</div>
+  <div class="row"><span>Servidor de análise</span><strong class="green">ONLINE</strong></div>
+  <div class="row"><span>Conexão MT5</span><strong class="red">DESCONECTADA</strong></div>
+  <div class="row"><span>Execução automática</span><strong class="yellow">BLOQUEADA</strong></div>
+ </div>
 </section>
 
-<section class="card">
-<h2>RESULTADO DA ANÁLISE</h2>
+<!-- OPERAÇÕES -->
+<section id="operations" class="page">
+ <div class="heading">Gestão de operações</div>
 
-<div id="signal" class="signal wait">A AGUARDAR...</div>
+ <div class="grid">
+  <div class="metric"><small>Posições abertas</small><strong>—</strong></div>
+  <div class="metric"><small>Resultado atual</small><strong>—</strong></div>
+ </div>
 
-<div class="grid" id="levels">
-<div class="box"><small>Entrada</small><b>—</b></div>
-<div class="box"><small>Stop Loss</small><b>—</b></div>
-<div class="box"><small>TP1</small><b>—</b></div>
-<div class="box"><small>TP2</small><b>—</b></div>
-<div class="box"><small>TP3</small><b>—</b></div>
-<div class="box"><small>Score</small><b>—</b></div>
-</div>
+ <div class="card" style="margin-top:14px">
+  <div class="card-title">POSIÇÕES ATIVAS</div>
+  <div class="empty">
+   <div style="font-size:30px">▤</div>
+   Nenhuma posição recebida.<br>
+   Aguardando integração com MT5.
+  </div>
+ </div>
 
-<p class="muted" id="details">Sem análise disponível.</p>
+ <div class="card">
+  <div class="card-title">GESTÃO DE RISCO</div>
+  <div class="notice">
+   Os limites de lote e de posições estão disponíveis na configuração do robô. A gestão real de posições dependerá do conector MT5.
+  </div>
+ </div>
 </section>
 
-<section class="card">
-<h2>INDICADORES</h2>
-<div class="grid" id="indicators">
-<div class="box"><small>EMA 9</small><b>—</b></div>
-<div class="box"><small>EMA 21</small><b>—</b></div>
-<div class="box"><small>RSI</small><b>—</b></div>
-<div class="box"><small>MACD</small><b>—</b></div>
-<div class="box"><small>ATR</small><b>—</b></div>
-<div class="box"><small>ADX</small><b>—</b></div>
-</div>
-</section>
+<!-- HISTÓRICO -->
+<section id="history" class="page">
+ <div class="heading">Histórico</div>
 
-<section class="card">
-<h2>ESTADO DO ROBÔ</h2>
-<div class="grid">
-<div class="box"><small>Conexão MT5</small><b>DESCONECTADA</b></div>
-<div class="box"><small>Execução automática</small><b>DESATIVADA</b></div>
-<div class="box"><small>Operações abertas</small><b>—</b></div>
-<div class="box"><small>Lucro / Prejuízo</small><b>—</b></div>
-</div>
+ <div class="card">
+  <div class="card-title">HISTÓRICO DE OPERAÇÕES</div>
+  <div class="empty">
+   <div style="font-size:30px">◷</div>
+   Ainda não existem operações registadas.
+  </div>
+ </div>
+
+ <div class="card">
+  <div class="card-title">ESTATÍSTICAS</div>
+  <div class="grid">
+   <div class="metric"><small>Total de operações</small><strong>—</strong></div>
+   <div class="metric"><small>Taxa de acerto</small><strong>—</strong></div>
+   <div class="metric"><small>Lucro total</small><strong>—</strong></div>
+   <div class="metric"><small>Drawdown</small><strong>—</strong></div>
+  </div>
+  <p class="muted">As estatísticas serão apresentadas quando existir histórico persistente de operações fechadas.</p>
+ </div>
 </section>
 
 </main>
 
-<script>
-const $ = id => document.getElementById(id);
+<nav class="bottom">
+ <button class="nav active" data-page="home"><span>⌂</span>INÍCIO</button>
+ <button class="nav" data-page="analyst"><span>◉</span>ANALYST</button>
+ <button class="nav" data-page="trader"><span>⇄</span>TRADER</button>
+ <button class="nav" data-page="operations"><span>▤</span>OPERAÇÕES</button>
+ <button class="nav" data-page="history"><span>◷</span>HISTÓRICO</button>
+</nav>
 
-function updateControls(){
+<script>
+const $=id=>document.getElementById(id);
+
+function showPage(page){
+ document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+ document.querySelectorAll('.nav').forEach(b=>b.classList.remove('active'));
+ $(page).classList.add('active');
+ document.querySelector(`[data-page="${page}"]`).classList.add('active');
+ if(page==='analyst')updateChart();
+}
+
+document.querySelectorAll('.nav').forEach(button=>{
+ button.addEventListener('click',()=>showPage(button.dataset.page));
+});
+
+function updateSettings(){
  const q=Math.max(1,Math.min(20,Number($('quantity').value)||1));
  $('quantity').value=q;
  $('quantityDisplay').textContent=q;
  $('lotDisplay').textContent=$('lot').value;
+ $('homeMode').textContent=$('mode').value;
 }
+$('quantity').addEventListener('input',updateSettings);
+$('lot').addEventListener('change',updateSettings);
+$('mode').addEventListener('change',updateSettings);
+updateSettings();
 
-$('quantity').addEventListener('change',updateControls);
-$('lot').addEventListener('change',updateControls);
-updateControls();
-
-function updateChart(){
- const symbol=$('symbol').value;
- const tfMap={M1:'1',M5:'5',M15:'15',M30:'30',H1:'60',H4:'240',D1:'D'};
- const map={
+const symbols={
  EURUSD:'FX:EURUSD',
  GBPUSD:'FX:GBPUSD',
  USDJPY:'FX:USDJPY',
+ USDCAD:'FX:USDCAD',
  XAUUSD:'OANDA:XAUUSD',
  BTCUSD:'BINANCE:BTCUSDT'
- };
+};
+const intervals={M1:'1',M5:'5',M15:'15',M30:'30',H1:'60',H4:'240',D1:'D'};
+
+function updateChart(){
+ const s=$('symbol').value;
+ const t=$('timeframe').value;
  $('chart').innerHTML=
- `<iframe title="TradingView" style="width:100%;height:100%;border:0"
- src="https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(map[symbol])}&interval=${tfMap[$('timeframe').value]}&hidesidetoolbar=1&theme=dark&style=1&locale=br"
+ `<iframe title="Gráfico TradingView" style="width:100%;height:100%;border:0"
+ src="https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(symbols[s])}&interval=${intervals[t]}&hidesidetoolbar=1&theme=dark&style=1&locale=br"
  allowfullscreen></iframe>`;
 }
 
-function box(label,value){
- return `<div class="box"><small>${label}</small><b>${value??'—'}</b></div>`;
+function metric(label,value){
+ return `<div class="metric"><small>${label}</small><strong>${value??'—'}</strong></div>`;
+}
+function format(value){
+ if(value===null||value===undefined)return '—';
+ if(typeof value==='number')return value.toFixed(5);
+ return value;
 }
 
 async function analyze(){
  const symbol=$('symbol').value;
  const timeframe=$('timeframe').value;
- $('signal').textContent='A ANALISAR...';
- $('signal').className='signal wait';
+ const button=$('analyze');
+
+ button.disabled=true;
+ button.textContent='A ANALISAR...';
+ $('signal').textContent='A ANALISAR';
+ $('signal').className='signal yellow';
 
  try{
   const url=`/api/analyze?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&mode=DEMO`;
   const response=await fetch(url);
   const data=await response.json();
 
-  if(!response.ok || data.status!=='success'){
-   throw new Error(data.error||'Não foi possível analisar o mercado.');
-  }
+  if(!response.ok||data.status!=='success')
+   throw new Error(data.error||'Falha na análise.');
 
   const i=data.indicators||{};
-  const m=data.marketStructure||{};
-  const p=data.takeProfit||{};
+  const tp=data.takeProfit||{};
 
   $('signal').textContent=data.signal||'WAIT';
-  $('signal').className='signal '+String(data.signal||'WAIT').toLowerCase();
+  $('signal').className='signal '+(
+   data.signal==='BUY'?'green':data.signal==='SELL'?'red':'yellow'
+  );
 
   $('levels').innerHTML=
-   box('Preço / Entrada',data.entry??data.price)+
-   box('Stop Loss',data.stopLoss)+
-   box('TP1',p.tp1)+
-   box('TP2',p.tp2)+
-   box('TP3',p.tp3)+
-   box('Score',data.score);
+   metric('Entrada',format(data.entry??data.price))+
+   metric('Stop Loss',format(data.stopLoss))+
+   metric('TP1',format(tp.tp1))+
+   metric('TP2',format(tp.tp2))+
+   metric('TP3',format(tp.tp3))+
+   metric('Score',data.score);
 
   $('indicators').innerHTML=
-   box('EMA 9',i.ema9)+
-   box('EMA 21',i.ema21)+
-   box('RSI',i.rsi)+
-   box('MACD',i.macd?.histogram)+
-   box('ATR',i.atr)+
-   box('ADX',i.adx);
-
-  $('details').textContent=
-   `Ativo: ${symbol} | Período: ${timeframe} | Tendência: ${m.trend||'—'} | Fonte: ${data.provider||'—'} | Confirmação: ${data.dataQuality?.fresh?'Dados recentes':'Verificar dados'}`;
-
-  $('connection').textContent='Servidor ligado. Análise recebida.';
- }catch(error){
-  $('signal').textContent='WAIT';
-  $('signal').className='signal wait';
-  $('details').textContent=error.message;
-  $('connection').textContent='Erro na análise. Verifica o servidor.';
- }
-}
-
-$('symbol').addEventListener('change',()=>{updateChart();analyze()});
-$('timeframe').addEventListener('change',()=>{updateChart();analyze()});
-$('analyze').addEventListener('click',analyze);
-
-updateChart();
-analyze();
-</script>
-
-</body>
-                                                                                           </html>
+   metric('EMA 9',format(i
