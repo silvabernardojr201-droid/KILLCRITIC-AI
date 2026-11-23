@@ -356,15 +356,42 @@ button:disabled{opacity:.35;cursor:not-allowed}
 const $=id=>document.getElementById(id);
 
 function showPage(page){
- document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
- document.querySelectorAll('.nav').forEach(b=>b.classList.remove('active'));
- $(page).classList.add('active');
- document.querySelector(`[data-page="${page}"]`).classList.add('active');
- if(page==='analyst')updateChart();
+function showPage(page){
+  const target = document.getElementById(page);
+
+  if(!target){
+    console.error('Página não encontrada:', page);
+    return;
+  }
+
+  document.querySelectorAll('.page').forEach(p=>{
+    p.classList.remove('active');
+  });
+
+  document.querySelectorAll('.nav').forEach(b=>{
+    b.classList.remove('active');
+  });
+
+  target.classList.add('active');
+
+  document.querySelectorAll('.nav').forEach(b=>{
+    if(b.dataset.page === page){
+      b.classList.add('active');
+    }
+  });
+
+  if(page === 'analyst'){
+    updateChart();
+  }
 }
 
-document.querySelectorAll('.nav').forEach(button=>{
- button.addEventListener('click',()=>showPage(button.dataset.page));
+document.addEventListener('click',function(event){
+  const button = event.target.closest('[data-page]');
+
+  if(button){
+    event.preventDefault();
+    showPage(button.dataset.page);
+  }
 });
 
 function updateSettings(){
