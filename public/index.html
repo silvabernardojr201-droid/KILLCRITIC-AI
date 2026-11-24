@@ -474,8 +474,12 @@ metric('RSI',format(i.rsi))+
 metric('MACD',format(i.macd))+
 metric('ADX',format(i.adx));
 
-$('analysis-time').textContent=
-'Última análise: '+new Date().toLocaleTimeString();
+const analysisTime=$('analysis-time');
+
+if(analysisTime){
+ analysisTime.textContent=
+  'Última análise: '+new Date().toLocaleTimeString();
+ }
 
 if($('analysis-status')){
 $('analysis-status').textContent='Análise concluída';
