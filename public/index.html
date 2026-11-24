@@ -468,4 +468,59 @@ async function analyze(){
    metric('Score',data.score);
 
   $('indicators').innerHTML=
-   metric('EMA 9',format(i
+metric('EMA 9',format(i.ema9))+
+metric('EMA 21',format(i.ema21))+
+metric('RSI',format(i.rsi))+
+metric('MACD',format(i.macd))+
+metric('ADX',format(i.adx));
+
+$('analysis-time').textContent=
+'Última análise: '+new Date().toLocaleTimeString();
+
+if($('analysis-status')){
+$('analysis-status').textContent='Análise concluída';
+}
+
+}catch(error){
+$('signal').textContent='ERRO';
+$('signal').className='signal red';
+
+$('levels').innerHTML=
+metric('Estado','Não foi possível analisar');
+
+$('indicators').innerHTML=
+metric('Detalhes',error.message);
+
+if($('analysis-status')){
+$('analysis-status').textContent='Falha na análise';
+}
+
+}finally{
+button.disabled=false;
+button.textContent='ANALISAR MERCADO';
+}
+}
+
+// Navegação entre as páginas
+document.addEventListener('click',function(event){
+const button=event.target.closest('[data-page]');
+
+if(button){
+event.preventDefault();
+showPage(button.dataset.page);
+}
+});
+
+// Botão de análise
+const analyzeButton=$('analyze');
+
+if(analyzeButton){
+analyzeButton.addEventListener('click',analyze);
+}
+
+// Mostrar a página inicial ao abrir
+showPage('home');
+
+</script>
+</body>
+</html>
