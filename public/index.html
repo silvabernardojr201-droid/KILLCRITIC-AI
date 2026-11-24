@@ -471,7 +471,11 @@ async function analyze(){
 metric('EMA 9',format(i.ema9))+
 metric('EMA 21',format(i.ema21))+
 metric('RSI',format(i.rsi))+
-metric('MACD',format(i.macd))+
+metric('MACD',
+ typeof i.macd==='object' && i.macd!==null
+ ? Object.entries(i.macd).map(([k,v])=>k+': '+format(v)).join(' | ')
+ : format(i.macd)
+)+
 metric('ADX',format(i.adx));
 
 const analysisTime=$('analysis-time');
